@@ -1,3 +1,4 @@
+import 'package:eduvision_app/app/theme_controller.dart';
 import 'package:eduvision_app/data/repositories/auth_repository.dart';
 import 'package:eduvision_app/data/services/face_api_service.dart';
 import 'package:eduvision_app/data/services/qr_token_service.dart';
@@ -17,5 +18,8 @@ final faceApiServiceProvider = Provider<FaceApiService>((ref) {
 });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(supabaseService: ref.watch(supabaseServiceProvider));
+  return AuthRepository(
+    supabaseService: ref.watch(supabaseServiceProvider),
+    preferences: ref.watch(sharedPreferencesProvider),
+  );
 });

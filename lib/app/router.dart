@@ -6,6 +6,7 @@ import 'package:eduvision_app/features/admin/screens/admin_gate_logs_screen.dart
 import 'package:eduvision_app/features/admin/screens/admin_message_reports_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_users_screen.dart';
 import 'package:eduvision_app/features/auth/login_screen.dart';
+import 'package:eduvision_app/features/auth/providers/auth_controller.dart';
 import 'package:eduvision_app/features/splash/splash_screen.dart';
 import 'package:eduvision_app/features/student/screens/student_anonymous_message_screen.dart';
 import 'package:eduvision_app/features/student/screens/student_attendance_screen.dart';
@@ -24,6 +25,24 @@ import 'package:go_router/go_router.dart';
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
+    redirect: (context, state) {
+      final authState = ref.read(authControllerProvider);
+      final path = state.uri.path;
+      final isPublicRoute = path == AppRoutes.splash || path == AppRoutes.login;
+
+      if (!isPublicRoute && !authState.isAuthenticated) {
+        return AppRoutes.login;
+      }
+
+      if (path == AppRoutes.login && authState.isAuthenticated) {
+        final user = authState.user;
+        if (user != null) {
+          return AppRoutes.dashboardForRole(user.role);
+        }
+      }
+
+      return null;
+    },
     routes: [
       GoRoute(
         path: AppRoutes.splash,

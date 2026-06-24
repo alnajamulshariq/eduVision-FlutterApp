@@ -5,33 +5,22 @@ import 'package:eduvision_app/core/widgets/glass_card.dart';
 import 'package:eduvision_app/core/widgets/premium_background.dart';
 import 'package:eduvision_app/core/widgets/primary_button.dart';
 import 'package:eduvision_app/core/widgets/theme_toggle_button.dart';
+import 'package:eduvision_app/features/auth/providers/auth_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-enum UserRole {
-  student('Student', Icons.person_rounded, AppRoutes.student),
-  teacher('Teacher', Icons.co_present_rounded, AppRoutes.teacher),
-  admin('Admin', Icons.admin_panel_settings_rounded, AppRoutes.admin);
-
-  const UserRole(this.label, this.icon, this.route);
-
-  final String label;
-  final IconData icon;
-  final String route;
-}
-
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  UserRole _selectedRole = UserRole.student;
   bool _obscurePassword = true;
 
   @override
@@ -41,13 +30,38 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid) {
       return;
     }
 
-    context.go(_selectedRole.route);
+    final user = await ref
+        .read(authControllerProvider.notifier)
+        .login(_emailController.text, _passwordController.text);
+
+    if (!mounted || user == null) {
+      return;
+    }
+
+    context.go(AppRoutes.dashboardForRole(user.role));
+  }
+
+  Future<void> _showDemoCredentials() async {
+    final selectedCredential = await showModalBottomSheet<_DemoCredential>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (context) => const _DemoCredentialsSheet(),
+    );
+
+    if (selectedCredential == null || !mounted) {
+      return;
+    }
+
+    ref.read(authControllerProvider.notifier).clearError();
+    _emailController.text = selectedCredential.email;
+    _passwordController.text = selectedCredential.password;
   }
 
   @override
@@ -139,6 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildForm(_LoginMetrics metrics) {
+    final authState = ref.watch(authControllerProvider);
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -157,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           SizedBox(height: metrics.microGap),
           Text(
-            'Sign in to continue to your ${AppConstants.appName} workspace.',
+            'Sign in with your university email and password.',
             style:
                 (metrics.isCompactHeight
                         ? textTheme.bodySmall
@@ -167,6 +182,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       height: 1.32,
                     ),
           ),
+          if (authState.errorMessage != null) ...[
+            SizedBox(height: metrics.fieldGap),
+            _LoginErrorMessage(message: authState.errorMessage!),
+          ],
           SizedBox(height: metrics.sectionGap),
           TextFormField(
             controller: _emailController,
@@ -180,9 +199,12 @@ class _LoginScreenState extends State<LoginScreen> {
               hintText: 'name@university.edu',
               prefixIcon: const Icon(Icons.mail_outline_rounded),
             ),
+            onChanged: (_) {
+              ref.read(authControllerProvider.notifier).clearError();
+            },
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return 'Email address is required';
+                return 'University email is required';
               }
               return null;
             },
@@ -193,7 +215,11 @@ class _LoginScreenState extends State<LoginScreen> {
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
             style: metrics.isCompactHeight ? textTheme.bodyMedium : null,
-            onFieldSubmitted: (_) => _handleLogin(),
+            onFieldSubmitted: (_) {
+              if (!authState.isLoading) {
+                _handleLogin();
+              }
+            },
             decoration: InputDecoration(
               isDense: metrics.isCompactHeight,
               contentPadding: metrics.fieldPadding,
@@ -212,6 +238,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ),
+            onChanged: (_) {
+              ref.read(authControllerProvider.notifier).clearError();
+            },
             validator: (value) {
               if (value == null || value.isEmpty) {
                 return 'Password is required';
@@ -219,44 +248,49 @@ class _LoginScreenState extends State<LoginScreen> {
               return null;
             },
           ),
-          SizedBox(height: metrics.sectionGap),
-          Text(
-            'Select role',
-            style: textTheme.labelLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          SizedBox(height: metrics.microGap + 2),
-          _RolePicker(
-            selectedRole: _selectedRole,
-            compact: metrics.isCompactHeight,
-            onChanged: (role) {
-              setState(() => _selectedRole = role);
-            },
-          ),
           SizedBox(height: metrics.buttonGap),
           PrimaryButton(
-            label: 'Login as ${_selectedRole.label}',
+            label: 'Login',
             icon: Icons.arrow_forward_rounded,
+            isLoading: authState.isLoading,
             minHeight: metrics.buttonHeight,
             padding: metrics.buttonPadding,
-            onPressed: _handleLogin,
+            onPressed: authState.isLoading ? null : _handleLogin,
           ),
           SizedBox(height: metrics.microGap),
           Center(
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                minimumSize: Size(0, metrics.aboutButtonHeight),
-                padding: EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: metrics.isCompactHeight ? 4 : 8,
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 4,
+              runSpacing: 0,
+              children: [
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: Size(0, metrics.aboutButtonHeight),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: metrics.isCompactHeight ? 4 : 8,
+                    ),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: _showDemoCredentials,
+                  icon: const Icon(Icons.key_rounded, size: 17),
+                  label: const Text('Demo Credentials'),
                 ),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: () => showEduVisionAboutSheet(context),
-              icon: const Icon(Icons.info_outline_rounded, size: 17),
-              label: const Text('About EduVision'),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: Size(0, metrics.aboutButtonHeight),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: metrics.isCompactHeight ? 4 : 8,
+                    ),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => showEduVisionAboutSheet(context),
+                  icon: const Icon(Icons.info_outline_rounded, size: 17),
+                  label: const Text('About EduVision'),
+                ),
+              ],
             ),
           ),
         ],
@@ -369,71 +403,120 @@ class _LoginFormCard extends StatelessWidget {
   }
 }
 
-class _RolePicker extends StatelessWidget {
-  const _RolePicker({
-    required this.selectedRole,
-    required this.compact,
-    required this.onChanged,
-  });
+class _LoginErrorMessage extends StatelessWidget {
+  const _LoginErrorMessage({required this.message});
 
-  final UserRole selectedRole;
-  final bool compact;
-  final ValueChanged<UserRole> onChanged;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final vertical = constraints.maxWidth < 270;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-        if (vertical) {
-          return Column(
-            children: [
-              for (final role in UserRole.values) ...[
-                if (role.index > 0) SizedBox(height: compact ? 6 : 8),
-                _RoleOption(
-                  role: role,
-                  selected: selectedRole == role,
-                  compact: compact,
-                  onSelected: () => onChanged(role),
-                ),
-              ],
-            ],
-          );
-        }
-
-        return Row(
-          children: [
-            for (final role in UserRole.values) ...[
-              if (role.index > 0) SizedBox(width: compact ? 7 : 10),
-              Expanded(
-                child: _RoleOption(
-                  role: role,
-                  selected: selectedRole == role,
-                  compact: compact,
-                  onSelected: () => onChanged(role),
-                ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withValues(alpha: 0.36),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.error.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline_rounded, size: 18, color: colorScheme.error),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              message,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onErrorContainer,
+                fontWeight: FontWeight.w800,
+                height: 1.25,
               ),
-            ],
-          ],
-        );
-      },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _RoleOption extends StatelessWidget {
-  const _RoleOption({
+class _DemoCredential {
+  const _DemoCredential({
     required this.role,
-    required this.selected,
-    required this.compact,
-    required this.onSelected,
+    required this.email,
+    required this.password,
+    required this.icon,
   });
 
-  final UserRole role;
-  final bool selected;
-  final bool compact;
-  final VoidCallback onSelected;
+  final String role;
+  final String email;
+  final String password;
+  final IconData icon;
+
+  static const values = [
+    _DemoCredential(
+      role: 'Student',
+      email: 'student@eduvision.edu',
+      password: 'student123',
+      icon: Icons.person_rounded,
+    ),
+    _DemoCredential(
+      role: 'Teacher',
+      email: 'teacher@eduvision.edu',
+      password: 'teacher123',
+      icon: Icons.co_present_rounded,
+    ),
+    _DemoCredential(
+      role: 'Admin',
+      email: 'admin@eduvision.edu',
+      password: 'admin123',
+      icon: Icons.admin_panel_settings_rounded,
+    ),
+  ];
+}
+
+class _DemoCredentialsSheet extends StatelessWidget {
+  const _DemoCredentialsSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Demo Credentials',
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Use these mock accounts while backend auth is not connected.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 14),
+          for (final credential in _DemoCredential.values) ...[
+            _DemoCredentialTile(credential: credential),
+            if (credential != _DemoCredential.values.last)
+              const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DemoCredentialTile extends StatelessWidget {
+  const _DemoCredentialTile({required this.credential});
+
+  final _DemoCredential credential;
 
   @override
   Widget build(BuildContext context) {
@@ -441,69 +524,61 @@ class _RoleOption extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Material(
-      color: Colors.transparent,
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.42),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        onTap: onSelected,
         borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 8 : 12,
-            vertical: compact ? 9 : 12,
-          ),
+        onTap: () => Navigator.of(context).pop(credential),
+        child: Container(
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: selected
-                  ? colorScheme.primary
-                  : colorScheme.outline.withValues(alpha: 0.62),
+              color: colorScheme.outline.withValues(alpha: 0.36),
             ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: colorScheme.primary.withValues(alpha: 0.14),
-                      blurRadius: 14,
-                      offset: const Offset(0, 7),
-                    ),
-                  ]
-                : null,
-            gradient: selected
-                ? LinearGradient(
-                    colors: [
-                      colorScheme.primary.withValues(alpha: 0.18),
-                      colorScheme.secondary.withValues(alpha: 0.10),
-                    ],
-                  )
-                : null,
-            color: selected
-                ? null
-                : colorScheme.surface.withValues(alpha: 0.38),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                role.icon,
-                size: compact ? 16 : 19,
-                color: selected
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                ),
+                child: Icon(
+                  credential.icon,
+                  color: colorScheme.primary,
+                  size: 20,
+                ),
               ),
-              SizedBox(width: compact ? 5 : 8),
-              Flexible(
-                child: Text(
-                  role.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: (compact ? textTheme.labelSmall : textTheme.labelLarge)
-                      ?.copyWith(
-                        color: selected
-                            ? colorScheme.primary
-                            : colorScheme.onSurfaceVariant,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      credential.role,
+                      style: textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${credential.email} / ${credential.password}',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: colorScheme.onSurfaceVariant,
+                size: 18,
               ),
             ],
           ),

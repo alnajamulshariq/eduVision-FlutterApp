@@ -2,10 +2,12 @@ import 'package:eduvision_app/core/constants/app_constants.dart';
 import 'package:eduvision_app/core/widgets/app_info_button.dart';
 import 'package:eduvision_app/core/widgets/glass_card.dart';
 import 'package:eduvision_app/core/widgets/theme_toggle_button.dart';
+import 'package:eduvision_app/features/auth/providers/auth_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class DashboardHeaderCard extends StatelessWidget {
+class DashboardHeaderCard extends ConsumerWidget {
   const DashboardHeaderCard({
     super.key,
     required this.roleLabel,
@@ -18,7 +20,7 @@ class DashboardHeaderCard extends StatelessWidget {
   final String subtitle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -63,7 +65,13 @@ class DashboardHeaderCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: OutlinedButton.icon(
-              onPressed: () => context.go(AppRoutes.login),
+              onPressed: () async {
+                await ref.read(authControllerProvider.notifier).logout();
+
+                if (context.mounted) {
+                  context.go(AppRoutes.login);
+                }
+              },
               icon: const Icon(Icons.logout_rounded, size: 17),
               label: const Text('Logout'),
               style: OutlinedButton.styleFrom(

@@ -3,34 +3,48 @@ import 'dart:async';
 import 'package:eduvision_app/core/constants/app_constants.dart';
 import 'package:eduvision_app/core/widgets/app_logo.dart';
 import 'package:eduvision_app/core/widgets/premium_background.dart';
+import 'package:eduvision_app/features/auth/providers/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends ConsumerState<SplashScreen> {
   Timer? _navigationTimer;
 
   @override
   void initState() {
     super.initState();
-    _navigationTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) {
-        context.go(AppRoutes.login);
-      }
-    });
+    _navigationTimer = Timer(const Duration(seconds: 4), _navigateFromAuth);
   }
 
   @override
   void dispose() {
     _navigationTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _navigateFromAuth() async {
+    await ref.read(authControllerProvider.notifier).checkAuthStatus();
+
+    if (!mounted) {
+      return;
+    }
+
+    final authState = ref.read(authControllerProvider);
+    final user = authState.user;
+    final route = authState.isAuthenticated && user != null
+        ? AppRoutes.dashboardForRole(user.role)
+        : AppRoutes.login;
+
+    context.go(route);
   }
 
   @override

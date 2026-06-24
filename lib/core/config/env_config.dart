@@ -60,7 +60,13 @@ abstract final class EnvConfig {
   static bool get hasFaceApiConfig => faceApiBaseUrl.isNotEmpty;
 
   static String _readValue(String key, {String compileTimeValue = ''}) {
-    final envValue = dotenv.env[key]?.trim();
+    String? envValue;
+
+    try {
+      envValue = dotenv.env[key]?.trim();
+    } catch (_) {
+      envValue = null;
+    }
 
     if (envValue != null && envValue.isNotEmpty) {
       return envValue;
