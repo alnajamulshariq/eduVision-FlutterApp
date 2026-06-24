@@ -22,6 +22,7 @@ EduVision is currently a premium Flutter frontend demo/prototype for a Smart Uni
 - Repository stubs for future data access.
 - Service stubs for Supabase, dynamic QR, and Python face API integration.
 - Placeholder Riverpod providers for future repository/service injection.
+- Supabase database planning files under `supabase/`.
 
 ## What Is Still Mock
 
@@ -54,6 +55,15 @@ EduVision is currently a premium Flutter frontend demo/prototype for a Smart Uni
 - Anonymous message persistence.
 - Parent email notification service.
 - PDF/CSV report exports.
+
+## Database Planning Completed
+
+- Supabase schema draft created in `supabase/schema.sql`.
+- RLS planning document created in `supabase/rls_policies.md`.
+- Seed data draft created in `supabase/seed_data.sql`.
+- Supabase README created in `supabase/README.md`.
+- Next step will be real Supabase project creation and connection after review.
+- No real credentials are committed, and the Flutter app is not connected to Supabase yet.
 
 ## Required Supabase Tables
 
