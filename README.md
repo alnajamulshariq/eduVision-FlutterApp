@@ -120,6 +120,17 @@ flutter pub get
 flutter run
 ```
 
+## Environment Setup
+
+EduVision currently runs in mock mode. Real Supabase credentials are not required yet.
+
+Later, when backend integration starts:
+
+1. Copy `.env.example` to `.env`.
+2. Add the Supabase project URL and anon key.
+3. Keep `USE_MOCK_DATA=true` until real backend integration is ready.
+4. Never commit real `.env` files or production credentials.
+
 ## Build
 
 ```bash

@@ -65,6 +65,16 @@ EduVision is currently a premium Flutter frontend demo/prototype for a Smart Uni
 - Next step will be real Supabase project creation and connection after review.
 - No real credentials are committed, and the Flutter app is not connected to Supabase yet.
 
+## Supabase Integration Foundation
+
+- `supabase_flutter` added for future Supabase client integration.
+- `flutter_dotenv` added for future environment-based configuration.
+- `.env.example` added with placeholder Supabase keys and mock-mode defaults.
+- Real credentials are not committed, and `.env` files are ignored by Git.
+- App startup safely attempts to load `.env` and continues in mock mode if it is missing.
+- Backend mode defaults to mock data until `USE_MOCK_DATA=false` and Supabase config exists.
+- The next step will be real Supabase project creation and authentication connection after review.
+
 ## Required Supabase Tables
 
 Suggested tables for the SRS:
