@@ -24,13 +24,13 @@ class StudentDashboardScreen extends StatelessWidget {
         ),
         DashboardStat(
           label: 'Attendance',
-          value: '0%',
+          value: '86%',
           icon: Icons.percent_rounded,
           accentColor: AppColors.blue,
         ),
         DashboardStat(
           label: 'Gate',
-          value: 'Pending',
+          value: 'Inside',
           icon: Icons.sensor_door_rounded,
           accentColor: AppColors.amber,
         ),

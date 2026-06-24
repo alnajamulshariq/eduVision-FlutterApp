@@ -75,7 +75,7 @@ class _AdminGateLogsScreenState extends State<AdminGateLogsScreen> {
       _recordedTime = TimeOfDay.now().format(context);
     });
 
-    showModuleSnackBar(context, 'Mock gate scan preview completed.');
+    showModuleSnackBar(context, 'Gate scan preview only.');
   }
 
   void _resetPreview() {

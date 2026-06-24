@@ -54,6 +54,7 @@ class _TeacherQrScannerScreenState extends State<TeacherQrScannerScreen>
         time: DateFormat('hh:mm a').format(DateTime.now()),
       );
     });
+    showModuleSnackBar(context, 'Gate scan preview only.');
   }
 
   void _resetScan() {

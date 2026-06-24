@@ -150,8 +150,12 @@ class ModuleBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final badgeColor = color ?? colorScheme.primary;
+    final maxBadgeWidth = (MediaQuery.sizeOf(context).width - 64)
+        .clamp(180.0, 320.0)
+        .toDouble();
 
     return Container(
+      constraints: BoxConstraints(maxWidth: maxBadgeWidth),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: badgeColor.withValues(alpha: 0.11),
@@ -165,11 +169,15 @@ class ModuleBadge extends StatelessWidget {
             Icon(icon, color: badgeColor, size: 16),
             const SizedBox(width: 7),
           ],
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: badgeColor,
-              fontWeight: FontWeight.w900,
+          Flexible(
+            child: Text(
+              label,
+              softWrap: true,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: badgeColor,
+                fontWeight: FontWeight.w900,
+                height: 1.15,
+              ),
             ),
           ),
         ],
@@ -295,7 +303,7 @@ class ModuleInfoTile extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w900,
@@ -304,7 +312,7 @@ class ModuleInfoTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,

@@ -366,8 +366,7 @@ class _StudentResultCard extends StatelessWidget {
                   children: [
                     Text(
                       result.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
@@ -375,8 +374,7 @@ class _StudentResultCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       'Roll No: ${result.rollNo}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                       style: textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w700,
@@ -396,7 +394,10 @@ class _StudentResultCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 11),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            alignment: WrapAlignment.spaceBetween,
             children: [
               Text(
                 '75% rule',
@@ -405,9 +406,8 @@ class _StudentResultCard extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const Spacer(),
               Text(
-                'Attendance: ${result.attendance}%',
+                'Attendance ${result.attendance}%',
                 style: textTheme.labelLarge?.copyWith(
                   color: statusColor,
                   fontWeight: FontWeight.w900,

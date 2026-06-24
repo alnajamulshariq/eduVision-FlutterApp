@@ -18,7 +18,7 @@ class AdminDashboardScreen extends StatelessWidget {
       stats: const [
         DashboardStat(
           label: 'Users',
-          value: 'Preview',
+          value: '140',
           icon: Icons.group_rounded,
           accentColor: AppColors.cyan,
         ),
@@ -59,7 +59,7 @@ class AdminDashboardScreen extends StatelessWidget {
           subtitle: 'Analytics and exports preview',
           icon: Icons.analytics_rounded,
           accentColor: AppColors.amber,
-          status: 'Ready',
+          status: 'Preview',
           onTap: () {
             context.push(AppRoutes.adminAttendanceReports);
           },

@@ -18,19 +18,19 @@ class TeacherDashboardScreen extends StatelessWidget {
       stats: const [
         DashboardStat(
           label: 'Classes',
-          value: '0',
+          value: '2',
           icon: Icons.calendar_month_rounded,
           accentColor: AppColors.cyan,
         ),
         DashboardStat(
           label: 'Sessions',
-          value: 'Ready',
+          value: 'Preview',
           icon: Icons.play_circle_rounded,
           accentColor: AppColors.blue,
         ),
         DashboardStat(
           label: 'Messages',
-          value: '0',
+          value: '3',
           icon: Icons.forum_rounded,
           accentColor: AppColors.amber,
         ),
@@ -50,16 +50,17 @@ class TeacherDashboardScreen extends StatelessWidget {
           subtitle: 'Prepare attendance session flow',
           icon: Icons.play_circle_rounded,
           accentColor: AppColors.blue,
-          status: 'Ready',
+          status: 'Preview',
           onTap: () {
             context.push(AppRoutes.teacherStartAttendance);
           },
         ),
         DashboardActionCard(
           title: 'QR Scanner',
-          subtitle: 'Reserved for scanner integration',
+          subtitle: 'Dynamic QR scan preview',
           icon: Icons.qr_code_scanner_rounded,
           accentColor: AppColors.amber,
+          status: 'Preview',
           onTap: () {
             context.push(AppRoutes.teacherQrScanner);
           },
