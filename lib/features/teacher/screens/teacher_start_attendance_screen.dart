@@ -1,7 +1,9 @@
 import 'package:eduvision_app/app/theme.dart';
 import 'package:eduvision_app/core/constants/app_constants.dart';
+import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
 import 'package:eduvision_app/core/widgets/primary_button.dart';
+import 'package:eduvision_app/data/models/attendance_session_model.dart';
 import 'package:eduvision_app/data/models/timetable_model.dart';
 import 'package:eduvision_app/features/teacher/providers/teacher_provider.dart';
 import 'package:flutter/material.dart';
@@ -41,13 +43,46 @@ class _TeacherStartAttendanceScreenState
     super.dispose();
   }
 
-  Future<void> _startDemoSession() async {
+  Future<void> _startDemoSession(TimetableModel activeClass) async {
     if (_status != AttendanceDemoStatus.idle) {
       return;
     }
 
     await _setDemoState(AttendanceDemoStatus.validating);
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+
+    final now = DateTime.now();
+    final session = AttendanceSessionModel(
+      id: '',
+      teacherId: activeClass.teacherId,
+      subjectId: activeClass.subjectId,
+      departmentId: activeClass.departmentId,
+      batchId: activeClass.batchId,
+      semesterId: activeClass.semesterId,
+      date: DateTime(now.year, now.month, now.day),
+      startTime: activeClass.startTime,
+      endTime: activeClass.endTime,
+      status: 'active',
+    );
+
+    final sessionResult = await ref
+        .read(teacherAttendanceRepositoryProvider)
+        .createAttendanceSession(session: session);
+
+    if (_disposed) {
+      return;
+    }
+
+    if (sessionResult case Failure<AttendanceSessionModel>(:final exception)) {
+      await _setDemoState(AttendanceDemoStatus.idle);
+      _showSnackBar(exception.message);
+      return;
+    }
+
+    if (sessionResult case Success<AttendanceSessionModel>()) {
+      _showSnackBar('Attendance session created successfully.');
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 600));
     if (_disposed) {
       return;
     }
@@ -80,6 +115,16 @@ class _TeacherStartAttendanceScreenState
     _scanController.stop();
     _scanController.value = 0;
     setState(() => _status = AttendanceDemoStatus.idle);
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -118,8 +163,8 @@ class _TeacherStartAttendanceScreenState
             minHeight: 50,
             isLoading: inProgress || activeClassAsync.isLoading,
             onPressed:
-                _status == AttendanceDemoStatus.idle && canStartAttendance
-                ? _startDemoSession
+                _status == AttendanceDemoStatus.idle && activeClass != null
+                ? () => _startDemoSession(activeClass)
                 : null,
           ),
         ),
@@ -188,7 +233,7 @@ class _TeacherStartAttendanceScreenState
     }
 
     return switch (_status) {
-      AttendanceDemoStatus.validating => 'Validating timetable...',
+      AttendanceDemoStatus.validating => 'Creating attendance session...',
       AttendanceDemoStatus.scanning => 'Capturing face frames...',
       AttendanceDemoStatus.calculating => 'Calculating attendance...',
       AttendanceDemoStatus.completed => 'Preview Completed',

@@ -120,7 +120,50 @@ class AttendanceRepository {
   Future<Result<AttendanceSessionModel>> createAttendanceSession({
     required AttendanceSessionModel session,
   }) async {
-    return _notImplemented('Attendance session creation');
+    if (_shouldUseMockData) {
+      final mockId = session.id.trim().isEmpty
+          ? 'mock-session-${DateTime.now().millisecondsSinceEpoch}'
+          : session.id;
+
+      return Result.success(session.copyWith(id: mockId));
+    }
+
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final payload = session.toJson();
+
+      if ((payload['id'] as String?)?.trim().isEmpty ?? true) {
+        payload.remove('id');
+      }
+
+      final row = await client
+          .from('attendance_sessions')
+          .insert(payload)
+          .select()
+          .single();
+
+      return Result.success(
+        AttendanceSessionModel.fromJson(Map<String, dynamic>.from(row)),
+      );
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to create attendance session right now.',
+          code: 'attendance_session_create_failed',
+        ),
+      );
+    }
   }
 
   Future<Result<void>> saveAttendanceRecord({

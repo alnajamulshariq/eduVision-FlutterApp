@@ -24,6 +24,8 @@ class AttendanceSessionModel {
   final String status;
 
   factory AttendanceSessionModel.fromJson(Map<String, dynamic> json) {
+    final rawDate = json['session_date'] ?? json['date'];
+
     return AttendanceSessionModel(
       id: json['id'] as String,
       teacherId: json['teacher_id'] as String,
@@ -31,7 +33,7 @@ class AttendanceSessionModel {
       departmentId: json['department_id'] as String,
       batchId: json['batch_id'] as String,
       semesterId: json['semester_id'] as String,
-      date: DateTime.parse(json['date'] as String),
+      date: DateTime.parse(rawDate as String),
       startTime: json['start_time'] as String,
       endTime: json['end_time'] as String,
       status: json['status'] as String,
@@ -40,13 +42,13 @@ class AttendanceSessionModel {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      if (id.trim().isNotEmpty) 'id': id,
       'teacher_id': teacherId,
       'subject_id': subjectId,
       'department_id': departmentId,
       'batch_id': batchId,
       'semester_id': semesterId,
-      'date': date.toIso8601String(),
+      'session_date': _formatDate(date),
       'start_time': startTime,
       'end_time': endTime,
       'status': status,
@@ -77,5 +79,13 @@ class AttendanceSessionModel {
       endTime: endTime ?? this.endTime,
       status: status ?? this.status,
     );
+  }
+
+  String _formatDate(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+
+    return '$year-$month-$day';
   }
 }
