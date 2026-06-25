@@ -54,6 +54,28 @@ final teacherTimetableProvider = FutureProvider<List<TimetableModel>>((
   return [];
 });
 
+final teacherActiveClassProvider = FutureProvider<TimetableModel?>((ref) async {
+  final currentUser = ref.watch(authControllerProvider).user;
+
+  if (currentUser == null) {
+    return null;
+  }
+
+  final result = await ref
+      .watch(teacherAttendanceRepositoryProvider)
+      .validateActiveClass(teacherId: currentUser.id, dateTime: DateTime.now());
+
+  if (result case Success<TimetableModel?>(:final data)) {
+    return data;
+  }
+
+  if (result case Failure<TimetableModel?>(:final exception)) {
+    throw Exception(exception.message);
+  }
+
+  return null;
+});
+
 String _weekdayName(DateTime dateTime) {
   switch (dateTime.weekday) {
     case DateTime.monday:
