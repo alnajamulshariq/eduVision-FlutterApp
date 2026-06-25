@@ -25,7 +25,7 @@ class AuthRepository {
       if (user == null) {
         return const Result.failure(
           AppException(
-            message: 'Invalid university email or password.',
+            message: 'Invalid email or password.',
             code: 'invalid_mock_credentials',
           ),
         );
@@ -41,7 +41,8 @@ class AuthRepository {
       if (client == null) {
         return const Result.failure(
           AppException(
-            message: 'Supabase is not ready. Please restart the app.',
+            message:
+                'Supabase is not configured. Please check environment setup.',
             code: 'supabase_not_ready',
           ),
         );
@@ -57,7 +58,7 @@ class AuthRepository {
       if (authUser == null) {
         return const Result.failure(
           AppException(
-            message: 'Login failed. Please check your credentials.',
+            message: 'Login failed. Please check your email and password.',
             code: 'supabase_login_failed',
           ),
         );
@@ -73,13 +74,27 @@ class AuthRepository {
       return Result.success(AppUserModel.fromJson(profile));
     } on AuthException catch (exception) {
       return Result.failure(
-        AppException(message: exception.message, code: 'supabase_auth_error'),
+        AppException(
+          message: _friendlyAuthErrorMessage(exception.message),
+          code: 'supabase_auth_error',
+        ),
       );
-    } catch (_) {
+    } on PostgrestException {
+      await _safeSignOut();
+
       return const Result.failure(
         AppException(
-          message: 'Login failed. Please check your account profile.',
+          message: 'Account profile not found. Please contact admin.',
           code: 'supabase_profile_error',
+        ),
+      );
+    } catch (_) {
+      await _safeSignOut();
+
+      return const Result.failure(
+        AppException(
+          message: 'Unable to connect right now. Please try again.',
+          code: 'supabase_login_error',
         ),
       );
     }
@@ -172,7 +187,8 @@ class AuthRepository {
       if (client == null) {
         return const Result.failure(
           AppException(
-            message: 'Supabase is not ready. Please restart the app.',
+            message:
+                'Supabase is not configured. Please check environment setup.',
             code: 'supabase_not_ready',
           ),
         );
@@ -191,8 +207,8 @@ class AuthRepository {
     } catch (_) {
       return const Result.failure(
         AppException(
-          message: 'Password could not be changed right now.',
-          code: 'supabase_password_change_failed',
+          message: 'Unable to update password right now. Please try again.',
+          code: 'supabase_password_update_failed',
         ),
       );
     }
@@ -212,6 +228,37 @@ class AuthRepository {
 
   Result<T> _notImplemented<T>(String feature) {
     return Result.failure(AppException.notImplemented(feature));
+  }
+
+  Future<void> _safeSignOut() async {
+    try {
+      final client = supabaseService?.client;
+      await client?.auth.signOut();
+    } catch (_) {
+      // Ignore sign-out cleanup errors.
+    }
+  }
+
+  String _friendlyAuthErrorMessage(String message) {
+    final normalizedMessage = message.toLowerCase();
+
+    if (normalizedMessage.contains('invalid login credentials') ||
+        normalizedMessage.contains('invalid credentials')) {
+      return 'Invalid email or password.';
+    }
+
+    if (normalizedMessage.contains('email not confirmed')) {
+      return 'This account is not confirmed. Please contact admin.';
+    }
+
+    if (normalizedMessage.contains('network') ||
+        normalizedMessage.contains('socket') ||
+        normalizedMessage.contains('connection') ||
+        normalizedMessage.contains('failed host lookup')) {
+      return 'Unable to connect right now. Please try again.';
+    }
+
+    return 'Login failed. Please check your email and password.';
   }
 
   bool get _shouldUseMockAuth {
