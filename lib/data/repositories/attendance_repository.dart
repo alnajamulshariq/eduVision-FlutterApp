@@ -274,7 +274,83 @@ class AttendanceRepository {
     required String studentId,
     String? subjectId,
   }) async {
-    return _notImplemented('Student attendance lookup');
+    if (_shouldUseMockData) {
+      return Result.success(_mockStudentAttendance());
+    }
+
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final resolvedStudentId = await _resolveStudentRecordId(studentId);
+
+      if (resolvedStudentId == null) {
+        return const Result.success([]);
+      }
+
+      if (subjectId != null && subjectId.trim().isNotEmpty) {
+        final sessionRows = await client
+            .from('attendance_sessions')
+            .select('id')
+            .eq('subject_id', subjectId.trim());
+
+        final sessionIds = sessionRows
+            .map((row) => row['id'] as String)
+            .toList();
+
+        if (sessionIds.isEmpty) {
+          return const Result.success([]);
+        }
+
+        final rows = await client
+            .from('attendance_records')
+            .select()
+            .eq('student_id', resolvedStudentId)
+            .inFilter('session_id', sessionIds)
+            .order('created_at', ascending: false);
+
+        final records = rows
+            .map(
+              (row) => AttendanceRecordModel.fromJson(
+                Map<String, dynamic>.from(row),
+              ),
+            )
+            .toList();
+
+        return Result.success(records);
+      }
+
+      final rows = await client
+          .from('attendance_records')
+          .select()
+          .eq('student_id', resolvedStudentId)
+          .order('created_at', ascending: false);
+
+      final records = rows
+          .map(
+            (row) =>
+                AttendanceRecordModel.fromJson(Map<String, dynamic>.from(row)),
+          )
+          .toList();
+
+      return Result.success(records);
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to load student attendance right now.',
+          code: 'student_attendance_load_failed',
+        ),
+      );
+    }
   }
 
   Future<Result<List<AttendanceRecordModel>>> getAttendanceReports({
@@ -313,6 +389,36 @@ class AttendanceRepository {
 
     if (teacherByUserId != null) {
       return teacherByUserId['id'] as String;
+    }
+
+    return null;
+  }
+
+  Future<String?> _resolveStudentRecordId(String studentId) async {
+    final client = supabaseService?.client;
+
+    if (client == null) {
+      return null;
+    }
+
+    final studentById = await client
+        .from('students')
+        .select('id')
+        .eq('id', studentId)
+        .maybeSingle();
+
+    if (studentById != null) {
+      return studentById['id'] as String;
+    }
+
+    final studentByUserId = await client
+        .from('students')
+        .select('id')
+        .eq('user_id', studentId)
+        .maybeSingle();
+
+    if (studentByUserId != null) {
+      return studentByUserId['id'] as String;
     }
 
     return null;
@@ -422,6 +528,46 @@ class AttendanceRepository {
     return timetable
         .where((item) => _normalizeDay(item.day) == normalizedDay)
         .toList();
+  }
+
+  List<AttendanceRecordModel> _mockStudentAttendance() {
+    final now = DateTime.now();
+
+    return [
+      AttendanceRecordModel(
+        id: 'mock-attendance-record-001',
+        sessionId: 'mock-session-database-systems',
+        studentId: 'mock-student-001',
+        attendancePercentage: 90,
+        attendanceMethod: 'face_recognition',
+        attendanceStatus: 'present',
+        framesDetected: 18,
+        totalFrames: 20,
+        createdAt: now,
+      ),
+      AttendanceRecordModel(
+        id: 'mock-attendance-record-002',
+        sessionId: 'mock-session-web-engineering',
+        studentId: 'mock-student-001',
+        attendancePercentage: 80,
+        attendanceMethod: 'face_recognition',
+        attendanceStatus: 'present',
+        framesDetected: 16,
+        totalFrames: 20,
+        createdAt: now.subtract(const Duration(days: 1)),
+      ),
+      AttendanceRecordModel(
+        id: 'mock-attendance-record-003',
+        sessionId: 'mock-session-software-project',
+        studentId: 'mock-student-001',
+        attendancePercentage: 70,
+        attendanceMethod: 'face_recognition',
+        attendanceStatus: 'absent',
+        framesDetected: 14,
+        totalFrames: 20,
+        createdAt: now.subtract(const Duration(days: 2)),
+      ),
+    ];
   }
 
   bool get _shouldUseMockData {
