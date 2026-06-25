@@ -5,7 +5,7 @@
 create extension if not exists pgcrypto;
 
 create table if not exists app_users (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key references auth.users(id) on delete cascade,
   name text not null,
   university_email text not null unique,
   role text not null check (role in ('student', 'teacher', 'admin')),
