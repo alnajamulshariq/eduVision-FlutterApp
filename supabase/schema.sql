@@ -363,3 +363,28 @@ create index if not exists attendance_sessions_lookup_idx
     semester_id,
     session_date
   );
+
+
+-- ============================================================
+-- RLS DEFAULT SAFETY
+-- ============================================================
+-- Policies will be added in the next backend step.
+-- Enabling RLS now makes the database safe by default.
+-- Without policies, client access will be blocked.
+
+alter table app_users enable row level security;
+alter table departments enable row level security;
+alter table batches enable row level security;
+alter table semesters enable row level security;
+alter table subjects enable row level security;
+alter table students enable row level security;
+alter table teachers enable row level security;
+alter table face_embeddings enable row level security;
+alter table teacher_subjects enable row level security;
+alter table student_subjects enable row level security;
+alter table teacher_timetables enable row level security;
+alter table attendance_sessions enable row level security;
+alter table attendance_records enable row level security;
+alter table gate_logs enable row level security;
+alter table anonymous_messages enable row level security;
+alter table message_reports enable row level security;
