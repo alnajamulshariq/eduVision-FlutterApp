@@ -53,7 +53,66 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Demo Access'), findsOneWidget);
+    expect(find.text('Use Student'), findsOneWidget);
+    expect(find.text('Use Teacher'), findsOneWidget);
+    expect(find.text('Use Admin'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Demo access autofills credentials and login routes by role', (
+    tester,
+  ) async {
+    final cases = [
+      _DemoLoginCase(
+        useButtonLabel: 'Use Student',
+        email: 'student@eduvision.edu',
+        password: 'student123',
+        dashboardTitle: 'Student Workspace',
+      ),
+      _DemoLoginCase(
+        useButtonLabel: 'Use Teacher',
+        email: 'teacher@eduvision.edu',
+        password: 'teacher123',
+        dashboardTitle: 'Teacher Workspace',
+      ),
+      _DemoLoginCase(
+        useButtonLabel: 'Use Admin',
+        email: 'admin@eduvision.edu',
+        password: 'admin123',
+        dashboardTitle: 'Admin Console',
+      ),
+    ];
+
+    for (final demoCase in cases) {
+      await _pumpEduVisionApp(tester);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text(demoCase.useButtonLabel));
+      await tester.tap(find.text(demoCase.useButtonLabel));
+      await tester.pumpAndSettle();
+
+      final emailField = tester.widget<TextFormField>(
+        find.byType(TextFormField).at(0),
+      );
+      final passwordField = tester.widget<TextFormField>(
+        find.byType(TextFormField).at(1),
+      );
+
+      expect(emailField.controller?.text, demoCase.email);
+      expect(passwordField.controller?.text, demoCase.password);
+
+      await tester.ensureVisible(find.text('Login'));
+      await tester.tap(find.text('Login'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(demoCase.dashboardTitle), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 20));
+    }
   });
 
   testWidgets('Student dashboard shows compact controls on 360x740', (
@@ -196,4 +255,18 @@ class _ScreenCase {
 
   final String name;
   final Widget Function() build;
+}
+
+class _DemoLoginCase {
+  const _DemoLoginCase({
+    required this.useButtonLabel,
+    required this.email,
+    required this.password,
+    required this.dashboardTitle,
+  });
+
+  final String useButtonLabel;
+  final String email;
+  final String password;
+  final String dashboardTitle;
 }
