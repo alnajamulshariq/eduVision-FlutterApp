@@ -78,8 +78,24 @@ class _TeacherStartAttendanceScreenState
       return;
     }
 
-    if (sessionResult case Success<AttendanceSessionModel>()) {
+    if (sessionResult case Success<AttendanceSessionModel>(:final data)) {
       _showSnackBar('Attendance session created successfully.');
+
+      final recordResult = await ref
+          .read(teacherAttendanceRepositoryProvider)
+          .saveDemoAttendanceRecordForSession(session: data);
+
+      if (_disposed) {
+        return;
+      }
+
+      if (recordResult case Failure<void>(:final exception)) {
+        await _setDemoState(AttendanceDemoStatus.idle);
+        _showSnackBar(exception.message);
+        return;
+      }
+
+      _showSnackBar('Attendance record saved successfully.');
     }
 
     await Future<void>.delayed(const Duration(milliseconds: 600));

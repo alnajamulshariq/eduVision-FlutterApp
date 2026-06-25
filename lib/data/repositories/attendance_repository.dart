@@ -169,7 +169,105 @@ class AttendanceRepository {
   Future<Result<void>> saveAttendanceRecord({
     required AttendanceRecordModel record,
   }) async {
-    return _notImplemented('Attendance record saving');
+    if (_shouldUseMockData) {
+      return const Result.success(null);
+    }
+
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final payload = record.toJson();
+
+      if ((payload['id'] as String?)?.trim().isEmpty ?? true) {
+        payload.remove('id');
+      }
+
+      payload.remove('created_at');
+
+      await client
+          .from('attendance_records')
+          .upsert(payload, onConflict: 'session_id,student_id');
+
+      return const Result.success(null);
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to save attendance record right now.',
+          code: 'attendance_record_save_failed',
+        ),
+      );
+    }
+  }
+
+  Future<Result<void>> saveDemoAttendanceRecordForSession({
+    required AttendanceSessionModel session,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(null);
+    }
+
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final enrolledStudent = await client
+          .from('student_subjects')
+          .select('student_id')
+          .eq('subject_id', session.subjectId)
+          .limit(1)
+          .maybeSingle();
+
+      final studentId = enrolledStudent?['student_id'] as String?;
+
+      if (studentId == null || studentId.trim().isEmpty) {
+        return const Result.failure(
+          AppException(
+            message: 'No enrolled student found for this active class.',
+            code: 'attendance_record_student_not_found',
+          ),
+        );
+      }
+
+      final record = AttendanceRecordModel(
+        id: '',
+        sessionId: session.id,
+        studentId: studentId,
+        attendancePercentage: 90,
+        attendanceMethod: 'face_recognition',
+        attendanceStatus: 'present',
+        framesDetected: 18,
+        totalFrames: 20,
+        createdAt: DateTime.now(),
+      );
+
+      return saveAttendanceRecord(record: record);
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to save demo attendance record right now.',
+          code: 'demo_attendance_record_save_failed',
+        ),
+      );
+    }
   }
 
   Future<Result<List<AttendanceRecordModel>>> getStudentAttendance({
