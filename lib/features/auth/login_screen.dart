@@ -32,28 +32,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _handleLogin() async {
     final isValid = _formKey.currentState?.validate() ?? false;
-    if (!isValid) {
-      return;
-    }
+    if (!isValid) return;
 
     final user = await ref
         .read(authControllerProvider.notifier)
         .login(_emailController.text, _passwordController.text);
 
-    if (!mounted || user == null) {
-      return;
-    }
+    if (!mounted || user == null) return;
 
     context.go(AppRoutes.dashboardForRole(user.role));
   }
 
   void _fillDemoCredential(_DemoCredential credential) {
-    // Autofill only; the authenticated user record still determines the role.
+    // Autofill only. Role still comes from authenticated mock user data.
     ref.read(authControllerProvider.notifier).clearError();
+
     _emailController.value = TextEditingValue(
       text: credential.email,
       selection: TextSelection.collapsed(offset: credential.email.length),
     );
+
     _passwordController.value = TextEditingValue(
       text: credential.password,
       selection: TextSelection.collapsed(offset: credential.password.length),
@@ -175,7 +173,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : textTheme.bodyMedium)
                     ?.copyWith(
                       color: colorScheme.onSurfaceVariant,
-                      height: 1.32,
+                      height: 1.28,
                     ),
           ),
           if (authState.errorMessage != null) ...[
@@ -183,7 +181,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _LoginErrorMessage(message: authState.errorMessage!),
           ],
           SizedBox(height: metrics.sectionGap),
-          _DemoAccessSection(
+          _CompactDemoAccessPanel(
             metrics: metrics,
             onCredentialSelected: _fillDemoCredential,
           ),
@@ -217,9 +215,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             textInputAction: TextInputAction.done,
             style: metrics.isCompactHeight ? textTheme.bodyMedium : null,
             onFieldSubmitted: (_) {
-              if (!authState.isLoading) {
-                _handleLogin();
-              }
+              if (!authState.isLoading) _handleLogin();
             },
             decoration: InputDecoration(
               isDense: metrics.isCompactHeight,
@@ -295,20 +291,20 @@ class _LoginMetrics {
   final bool isWide;
   final bool isCompactHeight;
 
-  double get outerHorizontalPadding => isCompactHeight ? 20 : 22;
-  double get outerVerticalPadding => isCompactHeight ? 12 : 22;
-  double get topGap => isCompactHeight ? 8 : 14;
-  double get logoGap => isCompactHeight ? 10 : 18;
-  double get cardPadding => isCompactHeight ? 16 : 22;
+  double get outerHorizontalPadding => isCompactHeight ? 18 : 22;
+  double get outerVerticalPadding => isCompactHeight ? 10 : 22;
+  double get topGap => isCompactHeight ? 6 : 14;
+  double get logoGap => isCompactHeight ? 8 : 18;
+  double get cardPadding => isCompactHeight ? 14 : 22;
   double get microGap => isCompactHeight ? 4 : 8;
-  double get fieldGap => isCompactHeight ? 10 : 14;
-  double get sectionGap => isCompactHeight ? 12 : 18;
-  double get buttonGap => isCompactHeight ? 14 : 20;
-  double get buttonHeight => isCompactHeight ? 50 : 56;
+  double get fieldGap => isCompactHeight ? 9 : 14;
+  double get sectionGap => isCompactHeight ? 10 : 18;
+  double get buttonGap => isCompactHeight ? 12 : 20;
+  double get buttonHeight => isCompactHeight ? 48 : 56;
   double get aboutButtonHeight => isCompactHeight ? 30 : 36;
 
   EdgeInsets get fieldPadding =>
-      EdgeInsets.symmetric(horizontal: 14, vertical: isCompactHeight ? 12 : 16);
+      EdgeInsets.symmetric(horizontal: 14, vertical: isCompactHeight ? 11 : 16);
 
   EdgeInsets get buttonPadding =>
       EdgeInsets.symmetric(horizontal: 18, vertical: isCompactHeight ? 12 : 16);
@@ -449,8 +445,8 @@ class _DemoCredential {
   ];
 }
 
-class _DemoAccessSection extends StatelessWidget {
-  const _DemoAccessSection({
+class _CompactDemoAccessPanel extends StatelessWidget {
+  const _CompactDemoAccessPanel({
     required this.metrics,
     required this.onCredentialSelected,
   });
@@ -462,93 +458,81 @@ class _DemoAccessSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      padding: EdgeInsets.all(metrics.isCompactHeight ? 10 : 12),
+      width: double.infinity,
+      padding: EdgeInsets.all(metrics.isCompactHeight ? 8 : 12),
       decoration: BoxDecoration(
+        color: colorScheme.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.48)),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            colorScheme.primary.withValues(alpha: isDark ? 0.18 : 0.10),
-            colorScheme.surfaceContainerHighest.withValues(
-              alpha: isDark ? 0.34 : 0.56,
-            ),
-          ],
-        ),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: metrics.isCompactHeight ? 32 : 36,
-                height: metrics.isCompactHeight ? 32 : 36,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: colorScheme.primary.withValues(alpha: 0.14),
-                  border: Border.all(
-                    color: colorScheme.primary.withValues(alpha: 0.22),
-                  ),
-                ),
-                child: Icon(
-                  Icons.key_rounded,
-                  color: colorScheme.primary,
-                  size: metrics.isCompactHeight ? 18 : 20,
+              Icon(
+                Icons.key_rounded,
+                color: colorScheme.primary,
+                size: metrics.isCompactHeight ? 15 : 17,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                'Demo Access',
+                style: textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  height: 1,
                 ),
               ),
-              SizedBox(width: metrics.isCompactHeight ? 9 : 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Demo Access',
-                      style:
-                          (metrics.isCompactHeight
-                                  ? textTheme.titleSmall
-                                  : textTheme.titleMedium)
-                              ?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                height: 1.08,
-                              ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Use mock university accounts for preview.',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        height: 1.24,
-                      ),
-                    ),
-                  ],
+              const Spacer(),
+              Flexible(
+                child: Text(
+                  'Mock accounts',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: metrics.isCompactHeight ? 10 : null,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
           ),
-          SizedBox(height: metrics.isCompactHeight ? 9 : 11),
-          for (final credential in _DemoCredential.values) ...[
-            _DemoCredentialCard(
-              credential: credential,
-              metrics: metrics,
-              onPressed: () => onCredentialSelected(credential),
-            ),
-            if (credential != _DemoCredential.values.last)
-              SizedBox(height: metrics.isCompactHeight ? 7 : 9),
-          ],
+          SizedBox(height: metrics.isCompactHeight ? 8 : 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final gap = metrics.isCompactHeight ? 6.0 : 8.0;
+              final itemWidth = (constraints.maxWidth - gap) / 2;
+
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (final credential in _DemoCredential.values)
+                    SizedBox(
+                      width: credential.role == 'Admin'
+                          ? constraints.maxWidth
+                          : itemWidth,
+                      child: _DemoQuickButton(
+                        credential: credential,
+                        metrics: metrics,
+                        onPressed: () => onCredentialSelected(credential),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
   }
 }
-
-class _DemoCredentialCard extends StatelessWidget {
-  const _DemoCredentialCard({
+class _DemoQuickButton extends StatelessWidget {
+  const _DemoQuickButton({
     required this.credential,
     required this.metrics,
     required this.onPressed,
@@ -562,173 +546,43 @@ class _DemoCredentialCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
-      padding: EdgeInsets.all(metrics.isCompactHeight ? 8 : 10),
-      decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.44),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.38)),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final useStackedLayout = constraints.maxWidth < 360;
-          final summary = _DemoCredentialSummary(
-            credential: credential,
-            metrics: metrics,
-          );
-          final button = _UseDemoCredentialButton(
-            label: 'Use ${credential.role}',
-            metrics: metrics,
-            onPressed: onPressed,
-          );
-
-          if (useStackedLayout) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                summary,
-                SizedBox(height: metrics.isCompactHeight ? 7 : 9),
-                SizedBox(width: double.infinity, child: button),
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: summary),
-              const SizedBox(width: 12),
-              button,
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _DemoCredentialSummary extends StatelessWidget {
-  const _DemoCredentialSummary({
-    required this.credential,
-    required this.metrics,
-  });
-
-  final _DemoCredential credential;
-  final _LoginMetrics metrics;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Row(
-      children: [
-        Container(
-          width: metrics.isCompactHeight ? 30 : 34,
-          height: metrics.isCompactHeight ? 30 : 34,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            color: colorScheme.secondary.withValues(alpha: 0.13),
-          ),
-          child: Icon(
-            credential.icon,
-            color: colorScheme.secondary,
-            size: metrics.isCompactHeight ? 17 : 19,
-          ),
-        ),
-        SizedBox(width: metrics.isCompactHeight ? 8 : 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                credential.role,
-                style: textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  height: 1.08,
-                ),
-              ),
-              const SizedBox(height: 3),
-              _DemoCredentialLine(
-                label: 'Email',
-                value: credential.email,
-                metrics: metrics,
-              ),
-              _DemoCredentialLine(
-                label: 'Password',
-                value: credential.password,
-                metrics: metrics,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DemoCredentialLine extends StatelessWidget {
-  const _DemoCredentialLine({
-    required this.label,
-    required this.value,
-    required this.metrics,
-  });
-
-  final String label;
-  final String value;
-  final _LoginMetrics metrics;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Text(
-      '$label: $value',
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: textTheme.bodySmall?.copyWith(
-        color: colorScheme.onSurfaceVariant,
-        fontSize: metrics.isCompactHeight ? 11 : null,
-        fontWeight: FontWeight.w700,
-        height: 1.18,
-      ),
-    );
-  }
-}
-
-class _UseDemoCredentialButton extends StatelessWidget {
-  const _UseDemoCredentialButton({
-    required this.label,
-    required this.metrics,
-    required this.onPressed,
-  });
-
-  final String label;
-  final _LoginMetrics metrics;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
+    return OutlinedButton(
       onPressed: onPressed,
-      icon: Icon(Icons.input_rounded, size: metrics.isCompactHeight ? 15 : 16),
-      label: Text(label, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
-        minimumSize: Size(0, metrics.isCompactHeight ? 34 : 38),
+        minimumSize: Size(0, metrics.isCompactHeight ? 32 : 38),
         padding: EdgeInsets.symmetric(
-          horizontal: metrics.isCompactHeight ? 10 : 12,
-          vertical: metrics.isCompactHeight ? 8 : 10,
+          horizontal: metrics.isCompactHeight ? 8 : 10,
+          vertical: metrics.isCompactHeight ? 7 : 9,
         ),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: TextStyle(
-          fontSize: metrics.isCompactHeight ? 12 : 13,
-          fontWeight: FontWeight.w900,
+        foregroundColor: colorScheme.primary,
+        side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.34)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              credential.icon,
+              size: metrics.isCompactHeight ? 13 : 15,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'Use ${credential.role}',
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: metrics.isCompactHeight ? 11 : 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-
 class _InsightTile extends StatelessWidget {
   const _InsightTile({
     required this.label,
