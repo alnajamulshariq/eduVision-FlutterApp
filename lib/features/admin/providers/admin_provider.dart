@@ -1,4 +1,5 @@
 import 'package:eduvision_app/core/utils/result.dart';
+import 'package:eduvision_app/data/models/admin_management_model.dart';
 import 'package:eduvision_app/data/models/anonymous_message_model.dart';
 import 'package:eduvision_app/data/models/attendance_report_model.dart';
 import 'package:eduvision_app/data/models/gate_log_model.dart';
@@ -43,6 +44,70 @@ final adminGateLogsProvider = FutureProvider<List<GateLogModel>>((ref) async {
 
   return [];
 });
+
+final adminUsersOverviewProvider =
+    FutureProvider.autoDispose<AdminUsersOverviewModel>((ref) async {
+      final currentUser = ref.watch(authControllerProvider).user;
+
+      if (currentUser == null || currentUser.role.toLowerCase() != 'admin') {
+        return const AdminUsersOverviewModel(users: []);
+      }
+
+      final result = await ref
+          .watch(adminRepositoryProvider)
+          .getAdminUsersOverview();
+
+      if (result case Success<AdminUsersOverviewModel>(:final data)) {
+        return data;
+      }
+
+      if (result case Failure<AdminUsersOverviewModel>(:final exception)) {
+        throw Exception(exception.message);
+      }
+
+      return const AdminUsersOverviewModel(users: []);
+    });
+
+final adminAcademicOverviewProvider =
+    FutureProvider.autoDispose<AcademicOverviewModel>((ref) async {
+      final currentUser = ref.watch(authControllerProvider).user;
+
+      if (currentUser == null || currentUser.role.toLowerCase() != 'admin') {
+        return const AcademicOverviewModel(
+          departments: [],
+          batches: [],
+          semesters: [],
+          subjects: [],
+          teachers: [],
+          students: [],
+          teacherAssignments: [],
+          studentEnrollments: [],
+        );
+      }
+
+      final result = await ref
+          .watch(adminRepositoryProvider)
+          .getAcademicOverview();
+
+      if (result case Success<AcademicOverviewModel>(:final data)) {
+        return data;
+      }
+
+      if (result case Failure<AcademicOverviewModel>(:final exception)) {
+        throw Exception(exception.message);
+      }
+
+      return const AcademicOverviewModel(
+        departments: [],
+        batches: [],
+        semesters: [],
+        subjects: [],
+        teachers: [],
+        students: [],
+        teacherAssignments: [],
+        studentEnrollments: [],
+      );
+    });
 
 final adminAttendanceReportsProvider =
     FutureProvider.autoDispose<List<AttendanceReportModel>>((ref) async {

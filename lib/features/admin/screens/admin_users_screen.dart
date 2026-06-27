@@ -1,60 +1,28 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
 import 'package:eduvision_app/core/widgets/primary_button.dart';
+import 'package:eduvision_app/data/models/admin_management_model.dart';
+import 'package:eduvision_app/features/admin/providers/admin_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const _roles = ['Student', 'Teacher', 'Admin'];
-const _departments = ['BSIT', 'BSSE', 'BBA'];
-const _batches = ['2022', '2023', '2024'];
+const _fallbackDepartments = ['Manual setup'];
+const _fallbackBatches = ['Manual setup'];
 
-const _recentUsers = [
-  _RecentUser(
-    name: 'Ali Khan',
-    idLabel: 'Roll No',
-    idValue: 'BSIT-2022-001',
-    role: 'Student',
-    department: 'BSIT',
-    status: 'Active',
-  ),
-  _RecentUser(
-    name: 'Sara Ahmed',
-    idLabel: 'Roll No',
-    idValue: 'BSIT-2022-002',
-    role: 'Student',
-    department: 'BSIT',
-    status: 'Active',
-  ),
-  _RecentUser(
-    name: 'Mr. Ahmad',
-    idLabel: 'Employee ID',
-    idValue: 'TCH-001',
-    role: 'Teacher',
-    department: 'Computer Science',
-    status: 'Active',
-  ),
-  _RecentUser(
-    name: 'Admin User',
-    idLabel: 'Employee ID',
-    idValue: 'ADM-001',
-    role: 'Admin',
-    department: 'Administration',
-    status: 'Active',
-  ),
-];
-
-class AdminUsersScreen extends StatefulWidget {
+class AdminUsersScreen extends ConsumerStatefulWidget {
   const AdminUsersScreen({super.key});
 
   @override
-  State<AdminUsersScreen> createState() => _AdminUsersScreenState();
+  ConsumerState<AdminUsersScreen> createState() => _AdminUsersScreenState();
 }
 
-class _AdminUsersScreenState extends State<AdminUsersScreen> {
+class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   String _role = _roles.first;
-  String _department = _departments.first;
-  String _batch = _batches.first;
+  String _department = _fallbackDepartments.first;
+  String _batch = _fallbackBatches.first;
 
   @override
   void dispose() {
@@ -63,46 +31,86 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     super.dispose();
   }
 
-  void _showPreviewAction() {
-    showModuleSnackBar(context, 'Preview action only.');
-  }
-
-  void _showCreatePreview() {
-    showModuleSnackBar(context, 'User creation preview only.');
+  void _showSecureBackendNotice() {
+    showModuleSnackBar(
+      context,
+      'User creation and password reset need a secure backend function.',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final usersAsync = ref.watch(adminUsersOverviewProvider);
+    final academicAsync = ref.watch(adminAcademicOverviewProvider);
+    final departmentOptions = academicAsync.maybeWhen(
+      data: (overview) => overview.departments
+          .map((department) => department.name)
+          .where((name) => name.trim().isNotEmpty)
+          .toList(),
+      orElse: () => _fallbackDepartments,
+    );
+    final batchOptions = academicAsync.maybeWhen(
+      data: (overview) => overview.batches
+          .map((batch) => batch.name)
+          .where((name) => name.trim().isNotEmpty)
+          .toList(),
+      orElse: () => _fallbackBatches,
+    );
+    final safeDepartments = departmentOptions.isEmpty
+        ? _fallbackDepartments
+        : departmentOptions;
+    final safeBatches = batchOptions.isEmpty ? _fallbackBatches : batchOptions;
+    final selectedDepartment = _safeSelection(safeDepartments, _department);
+    final selectedBatch = _safeSelection(safeBatches, _batch);
+
     return ModuleScreenShell(
       title: 'User Management',
-      subtitle: 'Manage students, teachers, and admin accounts preview.',
+      subtitle: 'View users and linked student or teacher profiles.',
       fallbackRoute: AppRoutes.admin,
       children: [
-        const _UserSummaryCard(),
-        _QuickActionsCard(onAction: _showPreviewAction),
-        _AddUserPreviewForm(
-          nameController: _nameController,
-          emailController: _emailController,
-          role: _role,
-          department: _department,
-          batch: _batch,
-          onRoleChanged: (value) => setState(() => _role = value),
-          onDepartmentChanged: (value) => setState(() => _department = value),
-          onBatchChanged: (value) => setState(() => _batch = value),
-          onCreatePreview: _showCreatePreview,
+        ...usersAsync.when(
+          loading: () => const <Widget>[
+            _UsersLoadingPanel(),
+            _UserSecurityNotice(),
+          ],
+          error: (error, _) => <Widget>[
+            _UsersErrorPanel(message: _cleanErrorMessage(error)),
+            const _UserSecurityNotice(),
+          ],
+          data: (overview) => <Widget>[
+            _UserSummaryCard(overview: overview),
+            _QuickActionsCard(onAction: _showSecureBackendNotice),
+            _AddUserPreviewForm(
+              nameController: _nameController,
+              emailController: _emailController,
+              role: _role,
+              department: selectedDepartment,
+              batch: selectedBatch,
+              departmentOptions: safeDepartments,
+              batchOptions: safeBatches,
+              onRoleChanged: (value) => setState(() => _role = value),
+              onDepartmentChanged: (value) =>
+                  setState(() => _department = value),
+              onBatchChanged: (value) => setState(() => _batch = value),
+              onCreatePreview: _showSecureBackendNotice,
+            ),
+            _RecentUsersList(users: overview.users),
+          ],
         ),
-        const _RecentUsersList(users: _recentUsers),
       ],
     );
   }
 }
 
 class _UserSummaryCard extends StatelessWidget {
-  const _UserSummaryCard();
+  const _UserSummaryCard({required this.overview});
+
+  final AdminUsersOverviewModel overview;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final counts = _UserSummaryCounts.fromUsers(overview.users);
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -117,18 +125,18 @@ class _UserSummaryCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _SummaryStatCard(
+                child: ModuleMetricCard(
                   label: 'Students',
-                  value: '120',
+                  value: counts.students.toString(),
                   icon: Icons.school_rounded,
                   color: colorScheme.secondary,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _SummaryStatCard(
+                child: ModuleMetricCard(
                   label: 'Teachers',
-                  value: '18',
+                  value: counts.teachers.toString(),
                   icon: Icons.co_present_rounded,
                   color: colorScheme.primary,
                 ),
@@ -139,18 +147,18 @@ class _UserSummaryCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _SummaryStatCard(
+                child: ModuleMetricCard(
                   label: 'Admins',
-                  value: '2',
+                  value: counts.admins.toString(),
                   icon: Icons.admin_panel_settings_rounded,
                   color: colorScheme.tertiary,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _SummaryStatCard(
+                child: ModuleMetricCard(
                   label: 'Active',
-                  value: '140',
+                  value: counts.active.toString(),
                   icon: Icons.verified_user_rounded,
                   color: colorScheme.secondary,
                 ),
@@ -203,67 +211,8 @@ class _QuickActionsCard extends StatelessWidget {
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SummaryStatCard extends StatelessWidget {
-  const _SummaryStatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.36),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.38)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(height: 9),
-          Text(
-            value,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-              height: 1.05,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            softWrap: true,
-            style: textTheme.labelMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w800,
-              height: 1.15,
-            ),
-          ),
+          const SizedBox(height: 10),
+          const _UserSecurityNotice(),
         ],
       ),
     );
@@ -277,6 +226,8 @@ class _AddUserPreviewForm extends StatelessWidget {
     required this.role,
     required this.department,
     required this.batch,
+    required this.departmentOptions,
+    required this.batchOptions,
     required this.onRoleChanged,
     required this.onDepartmentChanged,
     required this.onBatchChanged,
@@ -288,6 +239,8 @@ class _AddUserPreviewForm extends StatelessWidget {
   final String role;
   final String department;
   final String batch;
+  final List<String> departmentOptions;
+  final List<String> batchOptions;
   final ValueChanged<String> onRoleChanged;
   final ValueChanged<String> onDepartmentChanged;
   final ValueChanged<String> onBatchChanged;
@@ -303,7 +256,7 @@ class _AddUserPreviewForm extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionTitle(
-            title: 'Create User Preview',
+            title: 'Create User Plan',
             icon: Icons.manage_accounts_rounded,
           ),
           const SizedBox(height: 12),
@@ -321,7 +274,7 @@ class _AddUserPreviewForm extends StatelessWidget {
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
-              labelText: 'Email',
+              labelText: 'University Email',
               prefixIcon: Icon(Icons.alternate_email_rounded),
             ),
           ),
@@ -338,7 +291,7 @@ class _AddUserPreviewForm extends StatelessWidget {
             label: 'Department',
             icon: Icons.account_tree_rounded,
             value: department,
-            values: _departments,
+            values: departmentOptions,
             onChanged: onDepartmentChanged,
           ),
           const SizedBox(height: 10),
@@ -346,12 +299,12 @@ class _AddUserPreviewForm extends StatelessWidget {
             label: 'Batch',
             icon: Icons.groups_rounded,
             value: batch,
-            values: _batches,
+            values: batchOptions,
             onChanged: onBatchChanged,
           ),
           const SizedBox(height: 14),
           PrimaryButton(
-            label: 'Create User Preview',
+            label: 'Plan User Creation',
             icon: Icons.person_add_rounded,
             minHeight: 48,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -359,7 +312,7 @@ class _AddUserPreviewForm extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Preview only. No account is saved and no authentication is changed.',
+            'This screen does not create Auth users from the mobile client.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
               height: 1.35,
@@ -374,7 +327,7 @@ class _AddUserPreviewForm extends StatelessWidget {
 class _RecentUsersList extends StatelessWidget {
   const _RecentUsersList({required this.users});
 
-  final List<_RecentUser> users;
+  final List<AdminUserProfileModel> users;
 
   @override
   Widget build(BuildContext context) {
@@ -384,14 +337,17 @@ class _RecentUsersList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionTitle(
-            title: 'Recent Users',
+            title: 'Backend Users',
             icon: Icons.history_rounded,
           ),
           const SizedBox(height: 12),
-          for (final user in users) ...[
-            _RecentUserCard(user: user),
-            if (user != users.last) const SizedBox(height: 10),
-          ],
+          if (users.isEmpty)
+            const _EmptyUsersTile()
+          else
+            for (final user in users) ...[
+              _RecentUserCard(user: user),
+              if (user != users.last) const SizedBox(height: 10),
+            ],
         ],
       ),
     );
@@ -401,20 +357,20 @@ class _RecentUsersList extends StatelessWidget {
 class _RecentUserCard extends StatelessWidget {
   const _RecentUserCard({required this.user});
 
-  final _RecentUser user;
+  final AdminUserProfileModel user;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final roleColor = switch (user.role) {
-      'Student' => colorScheme.secondary,
-      'Teacher' => colorScheme.primary,
+    final roleColor = switch (user.normalizedRole) {
+      'student' => colorScheme.secondary,
+      'teacher' => colorScheme.primary,
       _ => colorScheme.tertiary,
     };
-    final roleIcon = switch (user.role) {
-      'Student' => Icons.school_rounded,
-      'Teacher' => Icons.co_present_rounded,
+    final roleIcon = switch (user.normalizedRole) {
+      'student' => Icons.school_rounded,
+      'teacher' => Icons.co_present_rounded,
       _ => Icons.admin_panel_settings_rounded,
     };
 
@@ -447,13 +403,17 @@ class _RecentUserCard extends StatelessWidget {
                   children: [
                     Text(
                       user.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${user.idLabel}: ${user.idValue}',
+                      user.universityEmail,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w700,
@@ -462,7 +422,19 @@ class _RecentUserCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Department: ${user.department}',
+                      '${_display(user.idLabel, 'ID')}: ${_display(user.idValue, user.id)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _profileSubtitle(user),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         height: 1.25,
@@ -478,11 +450,30 @@ class _RecentUserCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              ModuleBadge(label: user.role, icon: roleIcon, color: roleColor),
               ModuleBadge(
-                label: user.status,
-                icon: Icons.check_circle_rounded,
-                color: colorScheme.secondary,
+                label: user.roleLabel,
+                icon: roleIcon,
+                color: roleColor,
+              ),
+              ModuleBadge(
+                label: user.statusLabel,
+                icon: user.isActive
+                    ? Icons.check_circle_rounded
+                    : Icons.block_rounded,
+                color: user.isActive
+                    ? colorScheme.secondary
+                    : colorScheme.error,
+              ),
+              ModuleBadge(
+                label: user.passwordChangedOnce
+                    ? 'Password Changed'
+                    : 'First Login',
+                icon: user.passwordChangedOnce
+                    ? Icons.lock_open_rounded
+                    : Icons.lock_clock_rounded,
+                color: user.passwordChangedOnce
+                    ? colorScheme.secondary
+                    : colorScheme.tertiary,
               ),
             ],
           ),
@@ -490,11 +481,9 @@ class _RecentUserCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () {
-                showModuleSnackBar(context, 'User details preview only.');
-              },
+              onPressed: () => _showUserDetails(context, user),
               icon: const Icon(Icons.visibility_rounded, size: 18),
-              label: const Text('View'),
+              label: const Text('View Details'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(0, 42),
                 padding: const EdgeInsets.symmetric(
@@ -506,6 +495,29 @@ class _RecentUserCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _UserSummaryCounts {
+  const _UserSummaryCounts({
+    required this.students,
+    required this.teachers,
+    required this.admins,
+    required this.active,
+  });
+
+  final int students;
+  final int teachers;
+  final int admins;
+  final int active;
+
+  factory _UserSummaryCounts.fromUsers(List<AdminUserProfileModel> users) {
+    return _UserSummaryCounts(
+      students: users.where((user) => user.normalizedRole == 'student').length,
+      teachers: users.where((user) => user.normalizedRole == 'teacher').length,
+      admins: users.where((user) => user.normalizedRole == 'admin').length,
+      active: users.where((user) => user.isActive).length,
     );
   }
 }
@@ -597,20 +609,211 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _RecentUser {
-  const _RecentUser({
-    required this.name,
-    required this.idLabel,
-    required this.idValue,
-    required this.role,
-    required this.department,
-    required this.status,
-  });
+class _UsersLoadingPanel extends StatelessWidget {
+  const _UsersLoadingPanel();
 
-  final String name;
-  final String idLabel;
-  final String idValue;
-  final String role;
-  final String department;
-  final String status;
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Loading users',
+        subtitle: 'Fetching app users and linked profiles from backend.',
+        icon: Icons.hourglass_top_rounded,
+        color: colorScheme.primary,
+        trailing: ModuleBadge(label: 'Loading', color: colorScheme.primary),
+      ),
+    );
+  }
+}
+
+class _UsersErrorPanel extends StatelessWidget {
+  const _UsersErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Unable to load users',
+        subtitle: message,
+        icon: Icons.error_outline_rounded,
+        color: colorScheme.error,
+      ),
+    );
+  }
+}
+
+class _EmptyUsersTile extends StatelessWidget {
+  const _EmptyUsersTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModuleInfoTile(
+      title: 'No users found',
+      subtitle:
+          'Create Supabase Auth users and profile rows to list them here.',
+      icon: Icons.info_outline_rounded,
+      color: colorScheme.tertiary,
+    );
+  }
+}
+
+class _UserSecurityNotice extends StatelessWidget {
+  const _UserSecurityNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModuleInfoTile(
+      title: 'Auth account creation is pending secure backend work',
+      subtitle:
+          'Supabase Auth users and password resets should be handled by an Edge Function or Admin API, not by the Flutter anon client.',
+      icon: Icons.security_rounded,
+      color: colorScheme.tertiary,
+    );
+  }
+}
+
+String _safeSelection(List<String> values, String currentValue) {
+  if (values.contains(currentValue)) {
+    return currentValue;
+  }
+
+  return values.first;
+}
+
+String _profileSubtitle(AdminUserProfileModel user) {
+  final pieces = [
+    if (user.departmentName != null) user.departmentName!,
+    if (user.batchName != null) user.batchName!,
+    if (user.semesterName != null) user.semesterName!,
+  ];
+
+  if (pieces.isEmpty) {
+    return user.linkedRecordId == null ? 'No linked profile record' : 'Linked';
+  }
+
+  return pieces.join(' - ');
+}
+
+void _showUserDetails(BuildContext context, AdminUserProfileModel user) {
+  final colorScheme = Theme.of(context).colorScheme;
+
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    backgroundColor: colorScheme.surface,
+    builder: (context) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SectionTitle(title: user.name, icon: Icons.person_rounded),
+              const SizedBox(height: 12),
+              _DetailRow(label: 'Email', value: user.universityEmail),
+              _DetailRow(label: 'Role', value: user.roleLabel),
+              _DetailRow(
+                label: _display(user.idLabel, 'ID'),
+                value: _display(user.idValue, user.id),
+              ),
+              _DetailRow(label: 'Status', value: user.statusLabel),
+              _DetailRow(
+                label: 'Password State',
+                value: user.passwordChangedOnce
+                    ? 'Password changed'
+                    : 'First login pending',
+              ),
+              _DetailRow(
+                label: 'Department',
+                value: _display(user.departmentName, 'Not linked'),
+              ),
+              if (user.batchName != null)
+                _DetailRow(label: 'Batch', value: user.batchName!),
+              if (user.semesterName != null)
+                _DetailRow(label: 'Semester', value: user.semesterName!),
+              _DetailRow(
+                label: 'Linked Profile',
+                value: _display(user.linkedRecordId, 'No linked profile'),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 118,
+            child: Text(
+              label,
+              style: textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value,
+              style: textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _display(String? value, String fallback) {
+  final trimmed = value?.trim();
+
+  if (trimmed != null && trimmed.isNotEmpty) {
+    return trimmed;
+  }
+
+  return fallback;
+}
+
+String _cleanErrorMessage(Object error) {
+  final text = error.toString();
+
+  if (text.startsWith('Exception: ')) {
+    return text.substring('Exception: '.length);
+  }
+
+  return text;
 }
