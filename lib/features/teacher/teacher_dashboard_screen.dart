@@ -56,6 +56,15 @@ class TeacherDashboardScreen extends StatelessWidget {
           },
         ),
         DashboardActionCard(
+          title: 'Attendance Reports',
+          subtitle: 'Review session analytics',
+          icon: Icons.analytics_rounded,
+          accentColor: AppColors.amber,
+          onTap: () {
+            context.push(AppRoutes.teacherAttendanceReports);
+          },
+        ),
+        DashboardActionCard(
           title: 'QR Scanner',
           subtitle: 'Dynamic QR scan preview',
           icon: Icons.qr_code_scanner_rounded,

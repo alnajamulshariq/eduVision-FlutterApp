@@ -56,10 +56,9 @@ class AdminDashboardScreen extends StatelessWidget {
         ),
         DashboardActionCard(
           title: 'Attendance Reports',
-          subtitle: 'Analytics and exports preview',
+          subtitle: 'Analytics and student records',
           icon: Icons.analytics_rounded,
           accentColor: AppColors.amber,
-          status: 'Preview',
           onTap: () {
             context.push(AppRoutes.adminAttendanceReports);
           },

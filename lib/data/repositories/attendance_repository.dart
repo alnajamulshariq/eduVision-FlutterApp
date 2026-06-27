@@ -1,6 +1,7 @@
 import 'package:eduvision_app/core/errors/app_exception.dart';
 import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/data/models/attendance_record_model.dart';
+import 'package:eduvision_app/data/models/attendance_report_model.dart';
 import 'package:eduvision_app/data/models/attendance_session_model.dart';
 import 'package:eduvision_app/data/models/timetable_model.dart';
 import 'package:eduvision_app/data/services/face_api_service.dart';
@@ -11,6 +12,69 @@ class AttendanceRepository {
 
   final SupabaseService? supabaseService;
   final FaceApiService? faceApiService;
+
+  static const _attendanceSessionReportSelect = '''
+    id,
+    teacher_id,
+    subject_id,
+    department_id,
+    batch_id,
+    semester_id,
+    session_date,
+    start_time,
+    end_time,
+    status,
+    created_at,
+    teachers(name),
+    subjects(name),
+    departments(name),
+    batches(name),
+    semesters(name)
+  ''';
+
+  static const _attendanceStudentRecordSelect = '''
+    id,
+    session_id,
+    student_id,
+    attendance_percentage,
+    attendance_method,
+    attendance_status,
+    frames_detected,
+    total_frames,
+    created_at,
+    students(name, roll_no)
+  ''';
+
+  static const _attendanceRecordReportSelect = '''
+    id,
+    session_id,
+    student_id,
+    attendance_percentage,
+    attendance_method,
+    attendance_status,
+    frames_detected,
+    total_frames,
+    created_at,
+    students(name, roll_no),
+    attendance_sessions!inner(
+      id,
+      teacher_id,
+      subject_id,
+      department_id,
+      batch_id,
+      semester_id,
+      session_date,
+      start_time,
+      end_time,
+      status,
+      created_at,
+      teachers(name),
+      subjects(name),
+      departments(name),
+      batches(name),
+      semesters(name)
+    )
+  ''';
 
   Future<Result<List<TimetableModel>>> getTeacherTimetable({
     required String teacherId,
@@ -377,7 +441,7 @@ class AttendanceRepository {
     }
   }
 
-  Future<Result<List<AttendanceRecordModel>>> getAttendanceReports({
+  Future<Result<List<AttendanceReportModel>>> getAttendanceReports({
     String? departmentId,
     String? batchId,
     String? semesterId,
@@ -385,7 +449,279 @@ class AttendanceRepository {
     DateTime? fromDate,
     DateTime? toDate,
   }) async {
-    return _notImplemented('Attendance report lookup');
+    return getAdminAttendanceReports(
+      departmentId: departmentId,
+      batchId: batchId,
+      semesterId: semesterId,
+      subjectId: subjectId,
+      fromDate: fromDate,
+      toDate: toDate,
+    );
+  }
+
+  Future<Result<List<AttendanceReportModel>>> getTeacherAttendanceReports({
+    required String teacherId,
+    String? departmentId,
+    String? batchId,
+    String? semesterId,
+    String? subjectId,
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
+    if (_shouldUseMockData) {
+      return Result.success(_mockAttendanceReports().take(2).toList());
+    }
+
+    try {
+      final resolvedTeacherId = await _resolveTeacherRecordId(teacherId);
+
+      if (resolvedTeacherId == null) {
+        return const Result.success([]);
+      }
+
+      final reports = await _loadAttendanceReports(
+        teacherId: resolvedTeacherId,
+        departmentId: departmentId,
+        batchId: batchId,
+        semesterId: semesterId,
+        subjectId: subjectId,
+        fromDate: fromDate,
+        toDate: toDate,
+      );
+
+      return Result.success(reports);
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to load teacher attendance reports right now.',
+          code: 'teacher_attendance_reports_load_failed',
+        ),
+      );
+    }
+  }
+
+  Future<Result<List<AttendanceReportModel>>> getAdminAttendanceReports({
+    String? teacherId,
+    String? departmentId,
+    String? batchId,
+    String? semesterId,
+    String? subjectId,
+    String? status,
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
+    if (_shouldUseMockData) {
+      return Result.success(_mockAttendanceReports());
+    }
+
+    try {
+      final reports = await _loadAttendanceReportsFromRecords(
+        teacherId: teacherId,
+        departmentId: departmentId,
+        batchId: batchId,
+        semesterId: semesterId,
+        subjectId: subjectId,
+        status: status,
+        fromDate: fromDate,
+        toDate: toDate,
+      );
+
+      return Result.success(reports);
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to load admin attendance reports right now.',
+          code: 'admin_attendance_reports_load_failed',
+        ),
+      );
+    }
+  }
+
+  Future<List<AttendanceReportModel>> _loadAttendanceReports({
+    String? teacherId,
+    String? departmentId,
+    String? batchId,
+    String? semesterId,
+    String? subjectId,
+    String? status,
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
+    final client = supabaseService?.client;
+
+    if (client == null) {
+      throw const AppException(
+        message: 'Supabase is not configured. Please check environment setup.',
+        code: 'supabase_not_ready',
+      );
+    }
+
+    var query = client
+        .from('attendance_sessions')
+        .select(_attendanceSessionReportSelect);
+
+    if (teacherId != null && teacherId.trim().isNotEmpty) {
+      query = query.eq('teacher_id', teacherId.trim());
+    }
+
+    if (departmentId != null && departmentId.trim().isNotEmpty) {
+      query = query.eq('department_id', departmentId.trim());
+    }
+
+    if (batchId != null && batchId.trim().isNotEmpty) {
+      query = query.eq('batch_id', batchId.trim());
+    }
+
+    if (semesterId != null && semesterId.trim().isNotEmpty) {
+      query = query.eq('semester_id', semesterId.trim());
+    }
+
+    if (subjectId != null && subjectId.trim().isNotEmpty) {
+      query = query.eq('subject_id', subjectId.trim());
+    }
+
+    if (status != null && status.trim().isNotEmpty) {
+      query = query.eq('status', status.trim().toLowerCase());
+    }
+
+    if (fromDate != null) {
+      query = query.gte('session_date', _dateOnly(fromDate));
+    }
+
+    if (toDate != null) {
+      query = query.lte('session_date', _dateOnly(toDate));
+    }
+
+    final sessionRows = await query
+        .order('session_date', ascending: false)
+        .order('start_time', ascending: false);
+
+    final sessionIds = sessionRows.map((row) => row['id'] as String).toList();
+
+    if (sessionIds.isEmpty) {
+      return [];
+    }
+
+    final recordRows = await client
+        .from('attendance_records')
+        .select(_attendanceStudentRecordSelect)
+        .inFilter('session_id', sessionIds)
+        .order('created_at', ascending: false);
+
+    final recordsBySession = <String, List<AttendanceStudentRecordModel>>{};
+
+    for (final row in recordRows) {
+      final record = AttendanceStudentRecordModel.fromJson(
+        Map<String, dynamic>.from(row),
+      );
+
+      recordsBySession.putIfAbsent(record.sessionId, () => []).add(record);
+    }
+
+    return sessionRows.map((row) {
+      final session = Map<String, dynamic>.from(row);
+      final sessionId = session['id'] as String;
+
+      return AttendanceReportModel.fromSessionJson(
+        json: session,
+        records: recordsBySession[sessionId] ?? const [],
+      );
+    }).toList();
+  }
+
+  Future<List<AttendanceReportModel>> _loadAttendanceReportsFromRecords({
+    String? teacherId,
+    String? departmentId,
+    String? batchId,
+    String? semesterId,
+    String? subjectId,
+    String? status,
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
+    final client = supabaseService?.client;
+
+    if (client == null) {
+      throw const AppException(
+        message: 'Supabase is not configured. Please check environment setup.',
+        code: 'supabase_not_ready',
+      );
+    }
+
+    var query = client
+        .from('attendance_records')
+        .select(_attendanceRecordReportSelect);
+
+    if (teacherId != null && teacherId.trim().isNotEmpty) {
+      query = query.eq('attendance_sessions.teacher_id', teacherId.trim());
+    }
+
+    if (departmentId != null && departmentId.trim().isNotEmpty) {
+      query = query.eq(
+        'attendance_sessions.department_id',
+        departmentId.trim(),
+      );
+    }
+
+    if (batchId != null && batchId.trim().isNotEmpty) {
+      query = query.eq('attendance_sessions.batch_id', batchId.trim());
+    }
+
+    if (semesterId != null && semesterId.trim().isNotEmpty) {
+      query = query.eq('attendance_sessions.semester_id', semesterId.trim());
+    }
+
+    if (subjectId != null && subjectId.trim().isNotEmpty) {
+      query = query.eq('attendance_sessions.subject_id', subjectId.trim());
+    }
+
+    if (status != null && status.trim().isNotEmpty) {
+      query = query.eq(
+        'attendance_sessions.status',
+        status.trim().toLowerCase(),
+      );
+    }
+
+    if (fromDate != null) {
+      query = query.gte(
+        'attendance_sessions.session_date',
+        _dateOnly(fromDate),
+      );
+    }
+
+    if (toDate != null) {
+      query = query.lte('attendance_sessions.session_date', _dateOnly(toDate));
+    }
+
+    final recordRows = await query.order('created_at', ascending: false);
+    final sessionById = <String, Map<String, dynamic>>{};
+    final recordsBySession = <String, List<AttendanceStudentRecordModel>>{};
+
+    for (final row in recordRows) {
+      final recordJson = Map<String, dynamic>.from(row);
+      final sessionJson = _mapOrNull(recordJson['attendance_sessions']);
+
+      if (sessionJson == null) {
+        continue;
+      }
+
+      final sessionId = sessionJson['id'] as String;
+      sessionById.putIfAbsent(sessionId, () => sessionJson);
+
+      final record = AttendanceStudentRecordModel.fromJson(recordJson);
+      recordsBySession.putIfAbsent(sessionId, () => []).add(record);
+    }
+
+    final reports = sessionById.entries.map((entry) {
+      return AttendanceReportModel.fromSessionJson(
+        json: entry.value,
+        records: recordsBySession[entry.key] ?? const [],
+      );
+    }).toList();
+
+    reports.sort(_compareReportsDescending);
+
+    return reports;
   }
 
   Future<String?> _resolveTeacherRecordId(String teacherId) async {
@@ -618,11 +954,154 @@ class AttendanceRepository {
     ];
   }
 
-  bool get _shouldUseMockData {
-    return supabaseService == null || supabaseService!.isMockMode;
+  List<AttendanceReportModel> _mockAttendanceReports() {
+    final now = DateTime.now();
+    final sessionDate = DateTime(now.year, now.month, now.day);
+
+    final databaseRecords = [
+      AttendanceStudentRecordModel(
+        id: 'mock-report-record-001',
+        sessionId: 'mock-session-database-systems',
+        studentId: 'mock-student-001',
+        attendancePercentage: 90,
+        attendanceMethod: 'face_recognition',
+        attendanceStatus: 'present',
+        framesDetected: 18,
+        totalFrames: 20,
+        createdAt: now,
+        studentName: 'Ali Khan',
+        rollNo: 'BSIT-2022-001',
+      ),
+      AttendanceStudentRecordModel(
+        id: 'mock-report-record-002',
+        sessionId: 'mock-session-database-systems',
+        studentId: 'mock-student-002',
+        attendancePercentage: 80,
+        attendanceMethod: 'face_recognition',
+        attendanceStatus: 'present',
+        framesDetected: 16,
+        totalFrames: 20,
+        createdAt: now,
+        studentName: 'Sara Ahmed',
+        rollNo: 'BSIT-2022-002',
+      ),
+      AttendanceStudentRecordModel(
+        id: 'mock-report-record-003',
+        sessionId: 'mock-session-database-systems',
+        studentId: 'mock-student-003',
+        attendancePercentage: 70,
+        attendanceMethod: 'face_recognition',
+        attendanceStatus: 'absent',
+        framesDetected: 14,
+        totalFrames: 20,
+        createdAt: now,
+        studentName: 'Ahmed Raza',
+        rollNo: 'BSIT-2022-003',
+      ),
+      AttendanceStudentRecordModel(
+        id: 'mock-report-record-004',
+        sessionId: 'mock-session-database-systems',
+        studentId: 'mock-student-004',
+        attendancePercentage: 100,
+        attendanceMethod: 'dynamic_qr',
+        attendanceStatus: 'present',
+        framesDetected: 0,
+        totalFrames: 0,
+        createdAt: now,
+        studentName: 'Fatima Noor',
+        rollNo: 'BSIT-2022-004',
+      ),
+    ];
+
+    return [
+      AttendanceReportModel(
+        sessionId: 'mock-session-database-systems',
+        teacherId: 'mock-teacher-001',
+        subjectId: 'mock-subject-database-systems',
+        departmentId: 'mock-department-bsit',
+        batchId: 'mock-batch-2022',
+        semesterId: 'mock-semester-8',
+        sessionDate: sessionDate,
+        startTime: '09:00:00',
+        endTime: '10:00:00',
+        status: 'completed',
+        createdAt: now,
+        records: databaseRecords,
+        teacherName: 'Mr. Ahmad',
+        subjectName: 'Database Systems',
+        departmentName: 'Computer Science',
+        batchName: 'BSIT 2022',
+        semesterName: '8th Semester',
+      ),
+      AttendanceReportModel(
+        sessionId: 'mock-session-web-engineering',
+        teacherId: 'mock-teacher-001',
+        subjectId: 'mock-subject-web-engineering',
+        departmentId: 'mock-department-bsit',
+        batchId: 'mock-batch-2022',
+        semesterId: 'mock-semester-8',
+        sessionDate: sessionDate.subtract(const Duration(days: 1)),
+        startTime: '11:00:00',
+        endTime: '12:00:00',
+        status: 'completed',
+        createdAt: now.subtract(const Duration(days: 1)),
+        records: [
+          AttendanceStudentRecordModel(
+            id: 'mock-report-record-005',
+            sessionId: 'mock-session-web-engineering',
+            studentId: 'mock-student-001',
+            attendancePercentage: 85,
+            attendanceMethod: 'face_recognition',
+            attendanceStatus: 'present',
+            framesDetected: 17,
+            totalFrames: 20,
+            createdAt: now.subtract(const Duration(days: 1)),
+            studentName: 'Ali Khan',
+            rollNo: 'BSIT-2022-001',
+          ),
+        ],
+        teacherName: 'Mr. Ahmad',
+        subjectName: 'Web Engineering',
+        departmentName: 'Computer Science',
+        batchName: 'BSIT 2022',
+        semesterName: '8th Semester',
+      ),
+    ];
   }
 
-  Result<T> _notImplemented<T>(String feature) {
-    return Result.failure(AppException.notImplemented(feature));
+  String _dateOnly(DateTime value) {
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+
+    return '${value.year}-$month-$day';
+  }
+
+  Map<String, dynamic>? _mapOrNull(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+
+    return null;
+  }
+
+  int _compareReportsDescending(
+    AttendanceReportModel first,
+    AttendanceReportModel second,
+  ) {
+    final dateCompare = second.sessionDate.compareTo(first.sessionDate);
+
+    if (dateCompare != 0) {
+      return dateCompare;
+    }
+
+    return second.startTime.compareTo(first.startTime);
+  }
+
+  bool get _shouldUseMockData {
+    return supabaseService == null || supabaseService!.isMockMode;
   }
 }

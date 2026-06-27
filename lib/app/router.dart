@@ -14,6 +14,7 @@ import 'package:eduvision_app/features/student/screens/student_gate_history_scre
 import 'package:eduvision_app/features/student/screens/student_qr_screen.dart';
 import 'package:eduvision_app/features/student/student_dashboard_screen.dart';
 import 'package:eduvision_app/features/teacher/screens/teacher_anonymous_messages_screen.dart';
+import 'package:eduvision_app/features/teacher/screens/teacher_attendance_reports_screen.dart';
 import 'package:eduvision_app/features/teacher/screens/teacher_gate_monitoring_screen.dart';
 import 'package:eduvision_app/features/teacher/screens/teacher_qr_scanner_screen.dart';
 import 'package:eduvision_app/features/teacher/screens/teacher_start_attendance_screen.dart';
@@ -93,6 +94,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.teacherStartAttendance,
         name: 'teacher-start-attendance',
         builder: (context, state) => const TeacherStartAttendanceScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.teacherAttendanceReports,
+        name: 'teacher-attendance-reports',
+        builder: (context, state) => const TeacherAttendanceReportsScreen(),
       ),
       GoRoute(
         path: AppRoutes.teacherQrScanner,

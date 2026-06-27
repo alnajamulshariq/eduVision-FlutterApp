@@ -31,6 +31,7 @@ abstract final class AppRoutes {
   static const teacher = '/teacher';
   static const teacherTimetable = '/teacher/timetable';
   static const teacherStartAttendance = '/teacher/start-attendance';
+  static const teacherAttendanceReports = '/teacher/attendance-reports';
   static const teacherQrScanner = '/teacher/qr-scanner';
   static const teacherAnonymousMessages = '/teacher/anonymous-messages';
   static const teacherGateMonitoring = '/teacher/gate-monitoring';
