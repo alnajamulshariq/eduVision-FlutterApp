@@ -297,6 +297,30 @@ class AttendanceRepository {
         return const Result.success([]);
       }
 
+      const attendanceRecordDetailsSelect = '''
+        id,
+        session_id,
+        student_id,
+        attendance_percentage,
+        attendance_method,
+        attendance_status,
+        frames_detected,
+        total_frames,
+        created_at,
+        attendance_sessions!inner(
+          id,
+          session_date,
+          start_time,
+          end_time,
+          subject_id,
+          subjects(name),
+          teachers(name),
+          departments(name),
+          batches(name),
+          semesters(name)
+        )
+      ''';
+
       if (subjectId != null && subjectId.trim().isNotEmpty) {
         final sessionRows = await client
             .from('attendance_sessions')
@@ -313,7 +337,7 @@ class AttendanceRepository {
 
         final rows = await client
             .from('attendance_records')
-            .select()
+            .select(attendanceRecordDetailsSelect)
             .eq('student_id', resolvedStudentId)
             .inFilter('session_id', sessionIds)
             .order('created_at', ascending: false);
@@ -331,7 +355,7 @@ class AttendanceRepository {
 
       final rows = await client
           .from('attendance_records')
-          .select()
+          .select(attendanceRecordDetailsSelect)
           .eq('student_id', resolvedStudentId)
           .order('created_at', ascending: false);
 
@@ -544,6 +568,14 @@ class AttendanceRepository {
         framesDetected: 18,
         totalFrames: 20,
         createdAt: now,
+        sessionDate: now,
+        startTime: '09:00:00',
+        endTime: '10:00:00',
+        subjectName: 'Database Systems',
+        teacherName: 'Mr. Ahmad',
+        departmentName: 'Computer Science',
+        batchName: 'BSIT 2022',
+        semesterName: '8th Semester',
       ),
       AttendanceRecordModel(
         id: 'mock-attendance-record-002',
@@ -555,6 +587,14 @@ class AttendanceRepository {
         framesDetected: 16,
         totalFrames: 20,
         createdAt: now.subtract(const Duration(days: 1)),
+        sessionDate: now.subtract(const Duration(days: 1)),
+        startTime: '11:00:00',
+        endTime: '12:00:00',
+        subjectName: 'Web Engineering',
+        teacherName: 'Mr. Ahmad',
+        departmentName: 'Computer Science',
+        batchName: 'BSIT 2022',
+        semesterName: '8th Semester',
       ),
       AttendanceRecordModel(
         id: 'mock-attendance-record-003',
@@ -566,6 +606,14 @@ class AttendanceRepository {
         framesDetected: 14,
         totalFrames: 20,
         createdAt: now.subtract(const Duration(days: 2)),
+        sessionDate: now.subtract(const Duration(days: 2)),
+        startTime: '01:00:00',
+        endTime: '02:00:00',
+        subjectName: 'Software Project',
+        teacherName: 'Mr. Ahmad',
+        departmentName: 'Computer Science',
+        batchName: 'BSIT 2022',
+        semesterName: '8th Semester',
       ),
     ];
   }

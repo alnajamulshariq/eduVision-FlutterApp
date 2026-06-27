@@ -9,6 +9,14 @@ class AttendanceRecordModel {
     required this.framesDetected,
     required this.totalFrames,
     required this.createdAt,
+    this.sessionDate,
+    this.startTime,
+    this.endTime,
+    this.subjectName,
+    this.teacherName,
+    this.departmentName,
+    this.batchName,
+    this.semesterName,
   });
 
   final String id;
@@ -21,7 +29,19 @@ class AttendanceRecordModel {
   final int totalFrames;
   final DateTime createdAt;
 
+  // Display-only joined fields from attendance_sessions and academic tables.
+  final DateTime? sessionDate;
+  final String? startTime;
+  final String? endTime;
+  final String? subjectName;
+  final String? teacherName;
+  final String? departmentName;
+  final String? batchName;
+  final String? semesterName;
+
   factory AttendanceRecordModel.fromJson(Map<String, dynamic> json) {
+    final session = _mapOrNull(json['attendance_sessions']);
+
     return AttendanceRecordModel(
       id: json['id'] as String,
       sessionId: json['session_id'] as String,
@@ -29,9 +49,17 @@ class AttendanceRecordModel {
       attendancePercentage: (json['attendance_percentage'] as num).toDouble(),
       attendanceMethod: json['attendance_method'] as String,
       attendanceStatus: json['attendance_status'] as String,
-      framesDetected: json['frames_detected'] as int,
-      totalFrames: json['total_frames'] as int,
+      framesDetected: (json['frames_detected'] as num?)?.toInt() ?? 0,
+      totalFrames: (json['total_frames'] as num?)?.toInt() ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
+      sessionDate: _parseOptionalDate(session?['session_date']),
+      startTime: session?['start_time'] as String?,
+      endTime: session?['end_time'] as String?,
+      subjectName: _nestedName(session, 'subjects'),
+      teacherName: _nestedName(session, 'teachers'),
+      departmentName: _nestedName(session, 'departments'),
+      batchName: _nestedName(session, 'batches'),
+      semesterName: _nestedName(session, 'semesters'),
     );
   }
 
@@ -59,6 +87,14 @@ class AttendanceRecordModel {
     int? framesDetected,
     int? totalFrames,
     DateTime? createdAt,
+    DateTime? sessionDate,
+    String? startTime,
+    String? endTime,
+    String? subjectName,
+    String? teacherName,
+    String? departmentName,
+    String? batchName,
+    String? semesterName,
   }) {
     return AttendanceRecordModel(
       id: id ?? this.id,
@@ -70,6 +106,51 @@ class AttendanceRecordModel {
       framesDetected: framesDetected ?? this.framesDetected,
       totalFrames: totalFrames ?? this.totalFrames,
       createdAt: createdAt ?? this.createdAt,
+      sessionDate: sessionDate ?? this.sessionDate,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      subjectName: subjectName ?? this.subjectName,
+      teacherName: teacherName ?? this.teacherName,
+      departmentName: departmentName ?? this.departmentName,
+      batchName: batchName ?? this.batchName,
+      semesterName: semesterName ?? this.semesterName,
     );
+  }
+
+  static Map<String, dynamic>? _mapOrNull(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+
+    return null;
+  }
+
+  static DateTime? _parseOptionalDate(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    final rawValue = value.toString().trim();
+
+    if (rawValue.isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(rawValue);
+  }
+
+  static String? _nestedName(Map<String, dynamic>? source, String key) {
+    final nested = _mapOrNull(source?[key]);
+    final name = nested?['name'] as String?;
+
+    if (name == null || name.trim().isEmpty) {
+      return null;
+    }
+
+    return name.trim();
   }
 }

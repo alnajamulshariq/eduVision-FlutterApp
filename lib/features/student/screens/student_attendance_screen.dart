@@ -242,9 +242,26 @@ class _CurrentAttendanceCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               ModuleBadge(
-                label: 'Session ${_shortId(currentRecord.sessionId)}',
-                icon: Icons.event_note_rounded,
+                label: _recordTitle(currentRecord),
+                icon: Icons.menu_book_rounded,
+                color: AppColors.cyan,
               ),
+              if (_hasText(currentRecord.teacherName))
+                ModuleBadge(
+                  label: currentRecord.teacherName!,
+                  icon: Icons.person_rounded,
+                  color: AppColors.blue,
+                ),
+              if (_hasText(_classLabel(currentRecord)))
+                ModuleBadge(
+                  label: _classLabel(currentRecord),
+                  icon: Icons.school_rounded,
+                ),
+              if (_hasText(_timeLabel(currentRecord)))
+                ModuleBadge(
+                  label: _timeLabel(currentRecord),
+                  icon: Icons.access_time_rounded,
+                ),
               ModuleBadge(
                 label: _methodLabel(currentRecord.attendanceMethod),
                 icon: currentRecord.attendanceMethod == 'dynamic_qr'
@@ -252,7 +269,7 @@ class _CurrentAttendanceCard extends StatelessWidget {
                     : Icons.face_retouching_natural_rounded,
               ),
               ModuleBadge(
-                label: _formatDate(currentRecord.createdAt),
+                label: _formatDate(_recordDisplayDate(currentRecord)),
                 icon: Icons.calendar_month_rounded,
               ),
             ],
@@ -281,8 +298,9 @@ class _CurrentAttendanceCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           ModuleInfoTile(
-            title: _methodLabel(currentRecord.attendanceMethod),
-            subtitle: 'Attendance method saved from backend',
+            title: _recordTitle(currentRecord),
+            subtitle:
+                '${_methodLabel(currentRecord.attendanceMethod)} attendance saved from backend',
             icon: currentRecord.attendanceMethod == 'dynamic_qr'
                 ? Icons.qr_code_2_rounded
                 : Icons.face_retouching_natural_rounded,
@@ -368,7 +386,7 @@ class _AttendanceRecordCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Session ${_shortId(record.sessionId)}',
+                  _recordTitle(record),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: textTheme.titleSmall?.copyWith(
@@ -404,6 +422,22 @@ class _AttendanceRecordCard extends StatelessWidget {
                     ? Icons.check_circle_rounded
                     : Icons.warning_rounded,
                 color: accent,
+              ),
+              if (_hasText(record.teacherName))
+                ModuleBadge(
+                  label: record.teacherName!,
+                  icon: Icons.person_rounded,
+                  color: AppColors.blue,
+                ),
+              if (_hasText(_classLabel(record)))
+                ModuleBadge(
+                  label: _classLabel(record),
+                  icon: Icons.school_rounded,
+                  color: AppColors.cyan,
+                ),
+              ModuleBadge(
+                label: _formatDate(_recordDisplayDate(record)),
+                icon: Icons.calendar_month_rounded,
               ),
               ModuleBadge(
                 label: _methodLabel(record.attendanceMethod),
@@ -473,6 +507,8 @@ class _AttendanceTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final recentRecords = records.take(5).toList();
+
     return ModulePanel(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -485,7 +521,7 @@ class _AttendanceTimeline extends StatelessWidget {
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
-          if (records.isEmpty)
+          if (recentRecords.isEmpty)
             const ModuleInfoTile(
               title: 'No recent timeline',
               subtitle:
@@ -494,9 +530,9 @@ class _AttendanceTimeline extends StatelessWidget {
               color: AppColors.amber,
             )
           else
-            for (final record in records.take(5)) ...[
+            for (final record in recentRecords) ...[
               _TimelineRow(record: record),
-              if (record != records.take(5).last) const SizedBox(height: 9),
+              if (record != recentRecords.last) const SizedBox(height: 9),
             ],
         ],
       ),
@@ -517,7 +553,7 @@ class _TimelineRow extends StatelessWidget {
 
     return ModuleInfoTile(
       title:
-          '${_formatDate(record.createdAt)}, Session ${_shortId(record.sessionId)}',
+          '${_formatDate(_recordDisplayDate(record))}, ${_recordTitle(record)}',
       subtitle:
           '${_statusLabel(record.attendanceStatus)} - ${_percentageLabel(record.attendancePercentage)}',
       icon: present ? Icons.check_circle_rounded : Icons.warning_rounded,
@@ -528,6 +564,42 @@ class _TimelineRow extends StatelessWidget {
       ),
     );
   }
+}
+
+DateTime _recordDisplayDate(AttendanceRecordModel record) {
+  return record.sessionDate ?? record.createdAt;
+}
+
+String _recordTitle(AttendanceRecordModel record) {
+  final subjectName = record.subjectName?.trim();
+
+  if (subjectName != null && subjectName.isNotEmpty) {
+    return subjectName;
+  }
+
+  return 'Session ${_shortId(record.sessionId)}';
+}
+
+String _classLabel(AttendanceRecordModel record) {
+  final parts = <String?>[
+    record.departmentName,
+    record.batchName,
+    record.semesterName,
+  ].where(_hasText).map((value) => value!.trim()).toList();
+
+  return parts.join(' | ');
+}
+
+String _timeLabel(AttendanceRecordModel record) {
+  if (!_hasText(record.startTime) || !_hasText(record.endTime)) {
+    return '';
+  }
+
+  return '${_formatTime(record.startTime!)} - ${_formatTime(record.endTime!)}';
+}
+
+bool _hasText(String? value) {
+  return value != null && value.trim().isNotEmpty;
 }
 
 double _averageAttendance(List<AttendanceRecordModel> records) {
@@ -610,6 +682,31 @@ String _formatDate(DateTime value) {
   final year = localValue.year.toString();
 
   return '$day/$month/$year';
+}
+
+String _formatTime(String value) {
+  final parts = value.trim().split(':');
+
+  if (parts.length < 2) {
+    return value;
+  }
+
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+
+  if (hour == null || minute == null) {
+    return value;
+  }
+
+  final period = hour >= 12 ? 'PM' : 'AM';
+  final displayHour = hour == 0
+      ? 12
+      : hour > 12
+      ? hour - 12
+      : hour;
+  final displayMinute = minute.toString().padLeft(2, '0');
+
+  return '$displayHour:$displayMinute $period';
 }
 
 String _shortId(String value) {
