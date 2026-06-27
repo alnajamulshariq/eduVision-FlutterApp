@@ -5,10 +5,12 @@ import 'package:eduvision_app/core/constants/app_constants.dart';
 import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
 import 'package:eduvision_app/data/models/dynamic_qr_model.dart';
+import 'package:eduvision_app/data/services/qr_token_service.dart';
 import 'package:eduvision_app/features/auth/providers/auth_provider.dart';
 import 'package:eduvision_app/features/student/providers/student_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 class StudentQrScreen extends ConsumerStatefulWidget {
@@ -26,7 +28,7 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
   String? _qrPayload;
   String? _qrError;
   bool _isGenerating = false;
-  int _secondsRemaining = 30;
+  int _secondsRemaining = QrTokenService.defaultTtlSeconds;
 
   @override
   void initState() {
@@ -87,7 +89,7 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
     if (result case Success<String>(:final data)) {
       setState(() {
         _qrPayload = data;
-        _secondsRemaining = 30;
+        _secondsRemaining = QrTokenService.defaultTtlSeconds;
         _isGenerating = false;
       });
       return;
@@ -99,6 +101,23 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
         _isGenerating = false;
       });
     }
+  }
+
+  Future<void> _copyCurrentPayload() async {
+    final payload = _qrPayload?.trim();
+
+    if (payload == null || payload.isEmpty || _isGenerating) {
+      showModuleSnackBar(context, 'QR payload is still generating.');
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: payload));
+
+    if (!mounted) {
+      return;
+    }
+
+    showModuleSnackBar(context, 'QR payload copied for emulator testing.');
   }
 
   @override
@@ -149,6 +168,7 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
                     errorMessage: _qrError,
                     isGenerating: _isGenerating,
                     onRefresh: () => _regeneratePayload(identity),
+                    onCopyPayload: () => unawaited(_copyCurrentPayload()),
                   ),
                   const SizedBox(height: 14),
                   const Wrap(
@@ -205,6 +225,7 @@ class _DynamicQrIdentityCard extends StatelessWidget {
     required this.errorMessage,
     required this.isGenerating,
     required this.onRefresh,
+    required this.onCopyPayload,
   });
 
   final StudentQrIdentityModel identity;
@@ -214,12 +235,15 @@ class _DynamicQrIdentityCard extends StatelessWidget {
   final String? errorMessage;
   final bool isGenerating;
   final VoidCallback onRefresh;
+  final VoidCallback onCopyPayload;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final progress = secondsRemaining / 30;
+    final progress = (secondsRemaining / QrTokenService.defaultTtlSeconds)
+        .clamp(0.0, 1.0)
+        .toDouble();
     final qrBackground = colorScheme.brightness == Brightness.dark
         ? colorScheme.onSurface
         : colorScheme.surface;
@@ -377,6 +401,17 @@ class _DynamicQrIdentityCard extends StatelessWidget {
                   backgroundColor: colorScheme.secondary.withValues(
                     alpha: 0.13,
                   ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: payload == null || isGenerating
+                      ? null
+                      : onCopyPayload,
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('Copy Test Payload'),
                 ),
               ),
             ],

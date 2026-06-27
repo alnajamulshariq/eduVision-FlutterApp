@@ -8,7 +8,8 @@ class QrTokenService {
   const QrTokenService();
 
   static const payloadType = 'attendance_qr';
-  static const defaultTtl = Duration(seconds: 30);
+  static const defaultTtlSeconds = 120;
+  static const defaultTtl = Duration(seconds: defaultTtlSeconds);
 
   Future<Result<String>> generateStudentToken({
     String? studentUserId,

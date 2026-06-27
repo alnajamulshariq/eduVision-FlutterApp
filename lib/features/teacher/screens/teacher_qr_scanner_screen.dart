@@ -10,6 +10,7 @@ import 'package:eduvision_app/features/auth/providers/auth_controller.dart';
 import 'package:eduvision_app/features/teacher/providers/teacher_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -189,6 +190,31 @@ class _TeacherQrScannerScreenState extends ConsumerState<TeacherQrScannerScreen>
     }
   }
 
+  Future<void> _pastePayloadFromClipboard() async {
+    if (_isVerifying) {
+      return;
+    }
+
+    final data = await Clipboard.getData('text/plain');
+
+    if (!mounted) {
+      return;
+    }
+
+    final payload = data?.text?.trim();
+
+    if (payload == null || payload.isEmpty) {
+      showModuleSnackBar(context, 'Clipboard does not contain a QR payload.');
+      return;
+    }
+
+    _manualPayloadController.text = payload;
+    _manualPayloadController.selection = TextSelection.collapsed(
+      offset: payload.length,
+    );
+    showModuleSnackBar(context, 'QR payload pasted from clipboard.');
+  }
+
   @override
   Widget build(BuildContext context) {
     return ModuleScreenShell(
@@ -265,6 +291,7 @@ class _TeacherQrScannerScreenState extends ConsumerState<TeacherQrScannerScreen>
         _ManualPayloadPanel(
           controller: _manualPayloadController,
           isProcessing: _isVerifying,
+          onPasteFromClipboard: () => unawaited(_pastePayloadFromClipboard()),
           onSubmit: () => _processPayload(_manualPayloadController.text),
         ),
         if (_statusMessage != null && _scanResult == null)
@@ -526,11 +553,13 @@ class _ManualPayloadPanel extends StatelessWidget {
   const _ManualPayloadPanel({
     required this.controller,
     required this.isProcessing,
+    required this.onPasteFromClipboard,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
   final bool isProcessing;
+  final VoidCallback onPasteFromClipboard;
   final VoidCallback onSubmit;
 
   @override
@@ -556,6 +585,15 @@ class _ManualPayloadPanel extends StatelessWidget {
             decoration: const InputDecoration(
               labelText: 'Pasted QR payload',
               prefixIcon: Icon(Icons.qr_code_2_rounded),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: isProcessing ? null : onPasteFromClipboard,
+              icon: const Icon(Icons.content_paste_rounded, size: 18),
+              label: const Text('Paste from Clipboard'),
             ),
           ),
           const SizedBox(height: 12),
