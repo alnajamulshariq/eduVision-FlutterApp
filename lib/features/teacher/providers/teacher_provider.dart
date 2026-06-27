@@ -1,4 +1,5 @@
 import 'package:eduvision_app/core/utils/result.dart';
+import 'package:eduvision_app/data/models/gate_log_model.dart';
 import 'package:eduvision_app/data/models/timetable_model.dart';
 import 'package:eduvision_app/data/repositories/attendance_repository.dart';
 import 'package:eduvision_app/data/repositories/gate_repository.dart';
@@ -25,6 +26,30 @@ final teacherGateRepositoryProvider = Provider<GateRepository>((ref) {
 
 final teacherMessageRepositoryProvider = Provider<MessageRepository>((ref) {
   return MessageRepository(supabaseService: ref.watch(supabaseServiceProvider));
+});
+
+final teacherGateStatusProvider = FutureProvider<List<GateLogModel>>((
+  ref,
+) async {
+  final currentUser = ref.watch(authControllerProvider).user;
+
+  if (currentUser == null) {
+    return [];
+  }
+
+  final result = await ref
+      .watch(teacherGateRepositoryProvider)
+      .getTeacherStudentGateStatus(teacherId: currentUser.id, subjectId: '');
+
+  if (result case Success<List<GateLogModel>>(:final data)) {
+    return data;
+  }
+
+  if (result case Failure<List<GateLogModel>>(:final exception)) {
+    throw Exception(exception.message);
+  }
+
+  return [];
 });
 
 final teacherTimetableProvider = FutureProvider<List<TimetableModel>>((

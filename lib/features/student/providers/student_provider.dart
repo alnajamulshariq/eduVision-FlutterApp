@@ -1,5 +1,6 @@
 import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/data/models/attendance_record_model.dart';
+import 'package:eduvision_app/data/models/gate_log_model.dart';
 import 'package:eduvision_app/data/repositories/attendance_repository.dart';
 import 'package:eduvision_app/data/repositories/gate_repository.dart';
 import 'package:eduvision_app/data/repositories/message_repository.dart';
@@ -44,6 +45,28 @@ final studentGateRepositoryProvider = Provider<GateRepository>((ref) {
     supabaseService: ref.watch(supabaseServiceProvider),
     qrTokenService: ref.watch(qrTokenServiceProvider),
   );
+});
+
+final studentGateLogsProvider = FutureProvider<List<GateLogModel>>((ref) async {
+  final currentUser = ref.watch(authControllerProvider).user;
+
+  if (currentUser == null) {
+    return [];
+  }
+
+  final result = await ref
+      .watch(studentGateRepositoryProvider)
+      .getStudentGateHistory(studentId: currentUser.id);
+
+  if (result case Success<List<GateLogModel>>(:final data)) {
+    return data;
+  }
+
+  if (result case Failure<List<GateLogModel>>(:final exception)) {
+    throw Exception(exception.message);
+  }
+
+  return [];
 });
 
 final studentMessageRepositoryProvider = Provider<MessageRepository>((ref) {

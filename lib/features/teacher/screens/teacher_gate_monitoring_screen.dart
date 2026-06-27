@@ -1,53 +1,79 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
+import 'package:eduvision_app/data/models/gate_log_model.dart';
+import 'package:eduvision_app/features/teacher/providers/teacher_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-const _studentStatuses = [
-  _StudentGateStatus(
-    name: 'Ali Khan',
-    rollNo: 'BSIT-2022-001',
-    status: 'Inside University',
-    entryTime: '12:15 PM',
-    exitTime: 'Not Recorded',
-  ),
-  _StudentGateStatus(
-    name: 'Sara Ahmed',
-    rollNo: 'BSIT-2022-002',
-    status: 'Inside University',
-    entryTime: '08:05 AM',
-    exitTime: 'Not Recorded',
-  ),
-  _StudentGateStatus(
-    name: 'Ahmed Raza',
-    rollNo: 'BSIT-2022-003',
-    status: 'Outside University',
-    entryTime: '08:15 AM',
-    exitTime: '12:30 PM',
-  ),
-  _StudentGateStatus(
-    name: 'Fatima Noor',
-    rollNo: 'BSIT-2022-004',
-    status: 'Not Scanned',
-    entryTime: 'Not Recorded',
-    exitTime: 'Not Recorded',
-  ),
-];
-
-class TeacherGateMonitoringScreen extends StatelessWidget {
+class TeacherGateMonitoringScreen extends ConsumerWidget {
   const TeacherGateMonitoringScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return const ModuleScreenShell(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gateStatusAsync = ref.watch(teacherGateStatusProvider);
+
+    final dynamicChildren = gateStatusAsync.when(
+      loading: () => <Widget>[const _GateStatusLoadingPanel()],
+      error: (error, _) => <Widget>[
+        _GateStatusErrorPanel(message: _cleanErrorMessage(error)),
+      ],
+      data: (students) => <Widget>[
+        _CampusStatusSummary(students: students),
+        _StudentStatusList(students: students),
+      ],
+    );
+
+    return ModuleScreenShell(
       title: 'Student Gate Monitoring',
-      subtitle: 'Monitor student campus presence preview.',
+      subtitle: 'Monitor student campus presence from backend.',
       fallbackRoute: AppRoutes.teacher,
       children: [
-        _AcademicFilterCard(),
-        _CampusStatusSummary(),
-        _StudentStatusList(students: _studentStatuses),
-        _ImportantNoteCard(),
+        const _AcademicFilterCard(),
+        ...dynamicChildren,
+        const _ImportantNoteCard(),
       ],
+    );
+  }
+}
+
+class _GateStatusLoadingPanel extends StatelessWidget {
+  const _GateStatusLoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Loading gate status',
+        subtitle: 'Fetching student campus presence from backend.',
+        icon: Icons.hourglass_top_rounded,
+        color: colorScheme.primary,
+        trailing: ModuleBadge(label: 'Loading', color: colorScheme.primary),
+      ),
+    );
+  }
+}
+
+class _GateStatusErrorPanel extends StatelessWidget {
+  const _GateStatusErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Unable to load gate status',
+        subtitle: message,
+        icon: Icons.error_outline_rounded,
+        color: colorScheme.error,
+        trailing: ModuleBadge(label: 'Error', color: colorScheme.error),
+      ),
     );
   }
 }
@@ -93,11 +119,18 @@ class _AcademicFilterCard extends StatelessWidget {
 }
 
 class _CampusStatusSummary extends StatelessWidget {
-  const _CampusStatusSummary();
+  const _CampusStatusSummary({required this.students});
+
+  final List<GateLogModel> students;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final insideCount = students.where((log) => log.status == 'entry').length;
+    final outsideCount = students.where((log) => log.status == 'exit').length;
+    final notScannedCount = students
+        .where((log) => log.status == 'not_scanned')
+        .length;
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -114,7 +147,7 @@ class _CampusStatusSummary extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Inside',
-                  value: '2',
+                  value: insideCount.toString(),
                   icon: Icons.location_on_rounded,
                   color: colorScheme.secondary,
                 ),
@@ -123,7 +156,7 @@ class _CampusStatusSummary extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Outside',
-                  value: '1',
+                  value: outsideCount.toString(),
                   icon: Icons.location_off_rounded,
                   color: colorScheme.tertiary,
                 ),
@@ -133,7 +166,7 @@ class _CampusStatusSummary extends StatelessWidget {
           const SizedBox(height: 8),
           ModuleMetricCard(
             label: 'Not Scanned',
-            value: '1',
+            value: notScannedCount.toString(),
             icon: Icons.qr_code_2_rounded,
             color: colorScheme.error,
           ),
@@ -146,10 +179,12 @@ class _CampusStatusSummary extends StatelessWidget {
 class _StudentStatusList extends StatelessWidget {
   const _StudentStatusList({required this.students});
 
-  final List<_StudentGateStatus> students;
+  final List<GateLogModel> students;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return ModulePanel(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -160,10 +195,18 @@ class _StudentStatusList extends StatelessWidget {
             icon: Icons.people_alt_rounded,
           ),
           const SizedBox(height: 12),
-          for (final student in students) ...[
-            _StudentStatusCard(student: student),
-            if (student != students.last) const SizedBox(height: 10),
-          ],
+          if (students.isEmpty)
+            ModuleInfoTile(
+              title: 'No enrolled students found',
+              subtitle: 'Gate status appears here after backend data loads.',
+              icon: Icons.inbox_rounded,
+              color: colorScheme.error,
+            )
+          else
+            for (final student in students) ...[
+              _StudentStatusCard(student: student),
+              if (student != students.last) const SizedBox(height: 10),
+            ],
         ],
       ),
     );
@@ -173,22 +216,14 @@ class _StudentStatusList extends StatelessWidget {
 class _StudentStatusCard extends StatelessWidget {
   const _StudentStatusCard({required this.student});
 
-  final _StudentGateStatus student;
+  final GateLogModel student;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final accent = switch (student.status) {
-      'Inside University' => colorScheme.secondary,
-      'Outside University' => colorScheme.tertiary,
-      _ => colorScheme.error,
-    };
-    final statusIcon = switch (student.status) {
-      'Inside University' => Icons.location_on_rounded,
-      'Outside University' => Icons.location_off_rounded,
-      _ => Icons.qr_code_2_rounded,
-    };
+    final accent = _statusColor(context, student.status);
+    final statusIcon = _statusIcon(student.status);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -201,7 +236,7 @@ class _StudentStatusCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            student.name,
+            _studentName(student),
             style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
@@ -210,15 +245,21 @@ class _StudentStatusCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               ModuleBadge(
-                label: student.rollNo,
+                label: _rollNo(student),
                 icon: Icons.badge_rounded,
                 color: colorScheme.primary,
               ),
               ModuleBadge(
-                label: student.status,
+                label: _statusLabel(student.status),
                 icon: statusIcon,
                 color: accent,
               ),
+              if (_classLabel(student).isNotEmpty)
+                ModuleBadge(
+                  label: _classLabel(student),
+                  icon: Icons.school_rounded,
+                  color: colorScheme.primary,
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -226,10 +267,10 @@ class _StudentStatusCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _TimeBox(
-                  label: 'Entry Time',
-                  value: student.entryTime,
-                  icon: Icons.login_rounded,
-                  color: student.entryTime == 'Not Recorded'
+                  label: 'Latest Scan',
+                  value: _latestScanText(student),
+                  icon: Icons.schedule_rounded,
+                  color: student.status == 'not_scanned'
                       ? colorScheme.error
                       : colorScheme.secondary,
                 ),
@@ -237,12 +278,10 @@ class _StudentStatusCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _TimeBox(
-                  label: 'Exit Time',
-                  value: student.exitTime,
-                  icon: Icons.logout_rounded,
-                  color: student.exitTime == 'Not Recorded'
-                      ? colorScheme.onSurfaceVariant
-                      : colorScheme.tertiary,
+                  label: 'Gate',
+                  value: student.gateLocation,
+                  icon: Icons.meeting_room_rounded,
+                  color: colorScheme.tertiary,
                 ),
               ),
             ],
@@ -367,18 +406,99 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _StudentGateStatus {
-  const _StudentGateStatus({
-    required this.name,
-    required this.rollNo,
-    required this.status,
-    required this.entryTime,
-    required this.exitTime,
-  });
+Color _statusColor(BuildContext context, String status) {
+  final colorScheme = Theme.of(context).colorScheme;
 
-  final String name;
-  final String rollNo;
-  final String status;
-  final String entryTime;
-  final String exitTime;
+  return switch (status) {
+    'entry' => colorScheme.secondary,
+    'exit' => colorScheme.tertiary,
+    _ => colorScheme.error,
+  };
+}
+
+IconData _statusIcon(String status) {
+  return switch (status) {
+    'entry' => Icons.location_on_rounded,
+    'exit' => Icons.location_off_rounded,
+    _ => Icons.qr_code_2_rounded,
+  };
+}
+
+String _studentName(GateLogModel log) {
+  final name = log.studentName?.trim();
+
+  if (name != null && name.isNotEmpty) {
+    return name;
+  }
+
+  return 'Student';
+}
+
+String _rollNo(GateLogModel log) {
+  final rollNo = log.rollNo?.trim();
+
+  if (rollNo != null && rollNo.isNotEmpty) {
+    return rollNo;
+  }
+
+  return '--';
+}
+
+String _statusLabel(String status) {
+  return switch (status) {
+    'entry' => 'Inside University',
+    'exit' => 'Outside University',
+    _ => 'Not Scanned',
+  };
+}
+
+String _latestScanText(GateLogModel log) {
+  if (log.status == 'not_scanned' || log.time.trim().isEmpty) {
+    return 'Not Recorded';
+  }
+
+  return _formatTime(log.time);
+}
+
+String _classLabel(GateLogModel log) {
+  final parts = <String?>[
+    log.departmentName,
+    log.batchName,
+    log.semesterName,
+  ].where(_hasText).map((value) => value!.trim()).toList();
+
+  return parts.join(' | ');
+}
+
+bool _hasText(String? value) {
+  return value != null && value.trim().isNotEmpty;
+}
+
+String _formatTime(String value) {
+  final parts = value.trim().split(':');
+
+  if (parts.length < 2) {
+    return value;
+  }
+
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+
+  if (hour == null || minute == null) {
+    return value;
+  }
+
+  final period = hour >= 12 ? 'PM' : 'AM';
+  final displayHour = hour == 0
+      ? 12
+      : hour > 12
+      ? hour - 12
+      : hour;
+  final displayMinute = minute.toString().padLeft(2, '0');
+
+  return '$displayHour:$displayMinute $period';
+}
+
+String _cleanErrorMessage(Object error) {
+  return error.toString().replaceFirst('Exception: ', '');
 }

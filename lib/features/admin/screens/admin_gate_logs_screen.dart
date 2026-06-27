@@ -1,57 +1,23 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
+import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
 import 'package:eduvision_app/core/widgets/primary_button.dart';
+import 'package:eduvision_app/data/models/gate_log_model.dart';
+import 'package:eduvision_app/features/admin/providers/admin_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-const _gateLogs = [
-  _GateLog(
-    student: 'Ali Khan',
-    action: 'Entry',
-    time: '08:00 AM',
-    gate: 'Main Gate',
-    emailStatus: 'Email Sent',
-  ),
-  _GateLog(
-    student: 'Ali Khan',
-    action: 'Exit',
-    time: '11:30 AM',
-    gate: 'Main Gate',
-    emailStatus: 'Email Sent',
-  ),
-  _GateLog(
-    student: 'Ali Khan',
-    action: 'Entry',
-    time: '12:15 PM',
-    gate: 'Main Gate',
-    emailStatus: 'Email Sent',
-  ),
-  _GateLog(
-    student: 'Sara Ahmed',
-    action: 'Entry',
-    time: '08:05 AM',
-    gate: 'Main Gate',
-    emailStatus: 'Email Sent',
-  ),
-  _GateLog(
-    student: 'Ahmed Raza',
-    action: 'Exit',
-    time: '12:30 PM',
-    gate: 'Main Gate',
-    emailStatus: 'Email Sent',
-  ),
-];
-
-class AdminGateLogsScreen extends StatefulWidget {
+class AdminGateLogsScreen extends ConsumerStatefulWidget {
   const AdminGateLogsScreen({super.key});
 
   @override
-  State<AdminGateLogsScreen> createState() => _AdminGateLogsScreenState();
+  ConsumerState<AdminGateLogsScreen> createState() =>
+      _AdminGateLogsScreenState();
 }
 
-class _AdminGateLogsScreenState extends State<AdminGateLogsScreen> {
+class _AdminGateLogsScreenState extends ConsumerState<AdminGateLogsScreen> {
   bool _isVerifying = false;
-  bool _scanCompleted = false;
-  String? _recordedTime;
+  GateLogModel? _recordedLog;
 
   Future<void> _simulateGateScan() async {
     if (_isVerifying) {
@@ -60,61 +26,94 @@ class _AdminGateLogsScreenState extends State<AdminGateLogsScreen> {
 
     setState(() {
       _isVerifying = true;
-      _scanCompleted = false;
-      _recordedTime = null;
+      _recordedLog = null;
     });
 
-    await Future<void>.delayed(const Duration(seconds: 1));
+    final result = await ref
+        .read(adminGateRepositoryProvider)
+        .createNextGateLogForFirstActiveStudent(gateLocation: 'Main Gate');
+
     if (!mounted) {
       return;
     }
 
-    setState(() {
-      _isVerifying = false;
-      _scanCompleted = true;
-      _recordedTime = TimeOfDay.now().format(context);
-    });
-
-    showModuleSnackBar(context, 'Gate scan preview only.');
+    switch (result) {
+      case Success<GateLogModel>(:final data):
+        setState(() {
+          _isVerifying = false;
+          _recordedLog = data;
+        });
+        ref.invalidate(adminGateLogsProvider);
+        showModuleSnackBar(
+          context,
+          '${_actionLabel(data.status)} recorded successfully.',
+        );
+      case Failure<GateLogModel>(:final exception):
+        setState(() {
+          _isVerifying = false;
+          _recordedLog = null;
+        });
+        showModuleSnackBar(context, exception.message);
+    }
   }
 
   void _resetPreview() {
     setState(() {
       _isVerifying = false;
-      _scanCompleted = false;
-      _recordedTime = null;
+      _recordedLog = null;
     });
     showModuleSnackBar(context, 'Gate scan preview reset.');
   }
 
   @override
   Widget build(BuildContext context) {
+    final gateLogsAsync = ref.watch(adminGateLogsProvider);
+    final logs = gateLogsAsync.maybeWhen(
+      data: (logs) => logs,
+      orElse: () => const <GateLogModel>[],
+    );
+
     return ModuleScreenShell(
       title: 'Gate Logs',
-      subtitle: 'Campus entry and exit records preview.',
+      subtitle: 'Campus entry and exit records from backend.',
       fallbackRoute: AppRoutes.admin,
       children: [
-        const _GateOverviewSummary(),
+        _GateOverviewSummary(logs: logs),
         _SimulatedGateScanCard(
           isVerifying: _isVerifying,
-          scanCompleted: _scanCompleted,
-          recordedTime: _recordedTime,
+          latestLog: logs.isEmpty ? null : logs.first,
+          recordedLog: _recordedLog,
           onSimulate: _simulateGateScan,
           onReset: _resetPreview,
         ),
         const _FilterChipsCard(),
-        const _GateLogsList(logs: _gateLogs),
+        gateLogsAsync.when(
+          loading: () => const _GateLogsLoadingPanel(),
+          error: (error, _) =>
+              _GateLogsErrorPanel(message: _cleanErrorMessage(error)),
+          data: (logs) => _GateLogsList(logs: logs),
+        ),
       ],
     );
   }
 }
 
 class _GateOverviewSummary extends StatelessWidget {
-  const _GateOverviewSummary();
+  const _GateOverviewSummary({required this.logs});
+
+  final List<GateLogModel> logs;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final latestByStudent = _latestLogsByStudent(logs);
+    final insideCount = latestByStudent.values
+        .where((log) => log.status == 'entry')
+        .length;
+    final outsideCount = latestByStudent.values
+        .where((log) => log.status == 'exit')
+        .length;
+    final emailCount = logs.where((log) => log.parentEmailSent).length;
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -131,7 +130,7 @@ class _GateOverviewSummary extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Inside',
-                  value: '2',
+                  value: insideCount.toString(),
                   icon: Icons.location_on_rounded,
                   color: colorScheme.secondary,
                 ),
@@ -140,7 +139,7 @@ class _GateOverviewSummary extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Outside',
-                  value: '1',
+                  value: outsideCount.toString(),
                   icon: Icons.location_off_rounded,
                   color: colorScheme.tertiary,
                 ),
@@ -153,7 +152,7 @@ class _GateOverviewSummary extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Scans',
-                  value: '5',
+                  value: logs.length.toString(),
                   icon: Icons.qr_code_2_rounded,
                   color: colorScheme.primary,
                 ),
@@ -162,7 +161,7 @@ class _GateOverviewSummary extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Emails',
-                  value: '5',
+                  value: emailCount.toString(),
                   icon: Icons.mark_email_read_rounded,
                   color: colorScheme.secondary,
                 ),
@@ -178,15 +177,15 @@ class _GateOverviewSummary extends StatelessWidget {
 class _SimulatedGateScanCard extends StatelessWidget {
   const _SimulatedGateScanCard({
     required this.isVerifying,
-    required this.scanCompleted,
-    required this.recordedTime,
+    required this.latestLog,
+    required this.recordedLog,
     required this.onSimulate,
     required this.onReset,
   });
 
   final bool isVerifying;
-  final bool scanCompleted;
-  final String? recordedTime;
+  final GateLogModel? latestLog;
+  final GateLogModel? recordedLog;
   final VoidCallback onSimulate;
   final VoidCallback onReset;
 
@@ -194,6 +193,13 @@ class _SimulatedGateScanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final displayLog = recordedLog ?? latestLog;
+    final isInside = displayLog?.status == 'entry';
+    final accent = displayLog == null
+        ? colorScheme.error
+        : isInside
+        ? colorScheme.secondary
+        : colorScheme.tertiary;
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -206,14 +212,16 @@ class _SimulatedGateScanCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           ModuleInfoTile(
-            title: 'Ali Khan',
-            subtitle: 'Roll No: BSIT-2022-001',
+            title: _studentName(displayLog),
+            subtitle: 'Roll No: ${_rollNo(displayLog)}',
             icon: Icons.person_rounded,
             color: colorScheme.primary,
             trailing: ModuleBadge(
-              label: 'Inside',
-              icon: Icons.location_on_rounded,
-              color: colorScheme.secondary,
+              label: _campusShortStatus(displayLog),
+              icon: isInside
+                  ? Icons.location_on_rounded
+                  : Icons.location_off_rounded,
+              color: accent,
             ),
           ),
           const SizedBox(height: 10),
@@ -222,32 +230,33 @@ class _SimulatedGateScanCard extends StatelessWidget {
               Expanded(
                 child: _DetailBox(
                   label: 'Current Status',
-                  value: 'Inside University',
-                  icon: Icons.location_on_rounded,
-                  color: colorScheme.secondary,
+                  value: _campusStatus(displayLog),
+                  icon: isInside
+                      ? Icons.location_on_rounded
+                      : Icons.location_off_rounded,
+                  color: accent,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _DetailBox(
                   label: 'Next Scan Action',
-                  value: 'Exit',
-                  icon: Icons.logout_rounded,
+                  value: _nextAction(displayLog),
+                  icon: displayLog?.status == 'entry'
+                      ? Icons.logout_rounded
+                      : Icons.login_rounded,
                   color: colorScheme.tertiary,
                 ),
               ),
             ],
           ),
-          if (isVerifying || scanCompleted) ...[
+          if (isVerifying || recordedLog != null) ...[
             const SizedBox(height: 12),
-            _ScanResultBox(
-              isVerifying: isVerifying,
-              recordedTime: recordedTime,
-            ),
+            _ScanResultBox(isVerifying: isVerifying, recordedLog: recordedLog),
           ],
           const SizedBox(height: 12),
           Text(
-            'Preview only: no real QR scan, backend save, or email is sent.',
+            'The demo scan saves the next entry or exit action for the first active student.',
             style: textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
               height: 1.35,
@@ -287,26 +296,31 @@ class _SimulatedGateScanCard extends StatelessWidget {
 }
 
 class _ScanResultBox extends StatelessWidget {
-  const _ScanResultBox({required this.isVerifying, required this.recordedTime});
+  const _ScanResultBox({required this.isVerifying, required this.recordedLog});
 
   final bool isVerifying;
-  final String? recordedTime;
+  final GateLogModel? recordedLog;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final successColor = recordedLog?.status == 'entry'
+        ? colorScheme.secondary
+        : colorScheme.tertiary;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: (isVerifying ? colorScheme.primary : colorScheme.secondary)
-            .withValues(alpha: 0.10),
+        color: (isVerifying ? colorScheme.primary : successColor).withValues(
+          alpha: 0.10,
+        ),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: (isVerifying ? colorScheme.primary : colorScheme.secondary)
-              .withValues(alpha: 0.26),
+          color: (isVerifying ? colorScheme.primary : successColor).withValues(
+            alpha: 0.26,
+          ),
         ),
       ),
       child: isVerifying
@@ -335,15 +349,17 @@ class _ScanResultBox extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Exit recorded successfully',
+                  '${_actionLabel(recordedLog?.status ?? '')} recorded successfully',
                   style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.secondary,
+                    color: successColor,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Parent email notification sent',
+                  recordedLog?.parentEmailSent ?? false
+                      ? 'Parent email notification sent'
+                      : 'Parent email notification planned',
                   style: textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w700,
@@ -351,9 +367,9 @@ class _ScanResultBox extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 ModuleBadge(
-                  label: 'Time: ${recordedTime ?? '--'}',
+                  label: 'Time: ${_formatTime(recordedLog?.time ?? '')}',
                   icon: Icons.schedule_rounded,
-                  color: colorScheme.secondary,
+                  color: successColor,
                 ),
               ],
             ),
@@ -373,8 +389,50 @@ class _FilterChipsCard extends StatelessWidget {
         children: [
           _SectionTitle(title: 'Filters', icon: Icons.tune_rounded),
           SizedBox(height: 12),
-          ModuleChipRow(labels: ['Today', 'Entry', 'Exit', 'Main Gate']),
+          ModuleChipRow(labels: ['Latest First', 'Entry', 'Exit', 'Main Gate']),
         ],
+      ),
+    );
+  }
+}
+
+class _GateLogsLoadingPanel extends StatelessWidget {
+  const _GateLogsLoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Loading gate logs',
+        subtitle: 'Fetching saved campus scans from backend.',
+        icon: Icons.hourglass_top_rounded,
+        color: colorScheme.primary,
+        trailing: ModuleBadge(label: 'Loading', color: colorScheme.primary),
+      ),
+    );
+  }
+}
+
+class _GateLogsErrorPanel extends StatelessWidget {
+  const _GateLogsErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Unable to load gate logs',
+        subtitle: message,
+        icon: Icons.error_outline_rounded,
+        color: colorScheme.error,
+        trailing: ModuleBadge(label: 'Error', color: colorScheme.error),
       ),
     );
   }
@@ -383,10 +441,12 @@ class _FilterChipsCard extends StatelessWidget {
 class _GateLogsList extends StatelessWidget {
   const _GateLogsList({required this.logs});
 
-  final List<_GateLog> logs;
+  final List<GateLogModel> logs;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return ModulePanel(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -397,10 +457,18 @@ class _GateLogsList extends StatelessWidget {
             icon: Icons.list_alt_rounded,
           ),
           const SizedBox(height: 12),
-          for (final log in logs) ...[
-            _GateLogCard(log: log),
-            if (log != logs.last) const SizedBox(height: 10),
-          ],
+          if (logs.isEmpty)
+            ModuleInfoTile(
+              title: 'No gate logs found',
+              subtitle: 'Use the simulated gate scan to save the first log.',
+              icon: Icons.inbox_rounded,
+              color: colorScheme.error,
+            )
+          else
+            for (final log in logs) ...[
+              _GateLogCard(log: log),
+              if (log != logs.last) const SizedBox(height: 10),
+            ],
         ],
       ),
     );
@@ -410,21 +478,23 @@ class _GateLogsList extends StatelessWidget {
 class _GateLogCard extends StatelessWidget {
   const _GateLogCard({required this.log});
 
-  final _GateLog log;
+  final GateLogModel log;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isEntry = log.action == 'Entry';
+    final isEntry = log.status == 'entry';
     final accent = isEntry ? colorScheme.secondary : colorScheme.tertiary;
+    final action = _actionLabel(log.status);
 
     return ModuleInfoTile(
-      title: log.student,
-      subtitle: '${log.action}, ${log.time}, ${log.gate}, ${log.emailStatus}',
+      title: _studentName(log),
+      subtitle:
+          '$action, ${_formatTime(log.time)}, ${_formatDate(log.date)}, ${log.gateLocation}, ${_emailStatus(log)}',
       icon: isEntry ? Icons.login_rounded : Icons.logout_rounded,
       color: accent,
       trailing: ModuleBadge(
-        label: log.action,
+        label: action,
         icon: isEntry ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
         color: accent,
       ),
@@ -514,18 +584,110 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _GateLog {
-  const _GateLog({
-    required this.student,
-    required this.action,
-    required this.time,
-    required this.gate,
-    required this.emailStatus,
-  });
+Map<String, GateLogModel> _latestLogsByStudent(List<GateLogModel> logs) {
+  final latestByStudent = <String, GateLogModel>{};
 
-  final String student;
-  final String action;
-  final String time;
-  final String gate;
-  final String emailStatus;
+  for (final log in logs) {
+    latestByStudent.putIfAbsent(log.studentId, () => log);
+  }
+
+  return latestByStudent;
+}
+
+String _studentName(GateLogModel? log) {
+  final name = log?.studentName?.trim();
+
+  if (name != null && name.isNotEmpty) {
+    return name;
+  }
+
+  return 'Active Student';
+}
+
+String _rollNo(GateLogModel? log) {
+  final rollNo = log?.rollNo?.trim();
+
+  if (rollNo != null && rollNo.isNotEmpty) {
+    return rollNo;
+  }
+
+  return '--';
+}
+
+String _campusShortStatus(GateLogModel? log) {
+  if (log == null) {
+    return 'No Scan';
+  }
+
+  return log.status == 'entry' ? 'Inside' : 'Outside';
+}
+
+String _campusStatus(GateLogModel? log) {
+  if (log == null) {
+    return 'No Gate Scan Yet';
+  }
+
+  return log.status == 'entry' ? 'Inside University' : 'Outside University';
+}
+
+String _nextAction(GateLogModel? log) {
+  return log?.status == 'entry' ? 'Exit' : 'Entry';
+}
+
+String _actionLabel(String status) {
+  return status == 'entry' ? 'Entry' : 'Exit';
+}
+
+String _emailStatus(GateLogModel log) {
+  return log.parentEmailSent ? 'Email Sent' : 'Email Planned';
+}
+
+String _formatDate(DateTime value) {
+  final localValue = value.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final logDate = DateTime(localValue.year, localValue.month, localValue.day);
+
+  if (logDate == today) {
+    return 'Today';
+  }
+
+  if (logDate == today.subtract(const Duration(days: 1))) {
+    return 'Yesterday';
+  }
+
+  final day = localValue.day.toString().padLeft(2, '0');
+  final month = localValue.month.toString().padLeft(2, '0');
+  final year = localValue.year.toString();
+
+  return '$day/$month/$year';
+}
+
+String _formatTime(String value) {
+  final parts = value.trim().split(':');
+
+  if (parts.length < 2) {
+    return '--';
+  }
+
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+
+  if (hour == null || minute == null) {
+    return value;
+  }
+
+  final period = hour >= 12 ? 'PM' : 'AM';
+  final displayHour = hour == 0
+      ? 12
+      : hour > 12
+      ? hour - 12
+      : hour;
+  final displayMinute = minute.toString().padLeft(2, '0');
+
+  return '$displayHour:$displayMinute $period';
+}
+
+String _cleanErrorMessage(Object error) {
+  return error.toString().replaceFirst('Exception: ', '');
 }
