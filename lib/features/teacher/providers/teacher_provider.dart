@@ -16,6 +16,7 @@ final teacherAttendanceRepositoryProvider = Provider<AttendanceRepository>((
   return AttendanceRepository(
     supabaseService: ref.watch(supabaseServiceProvider),
     faceApiService: ref.watch(faceApiServiceProvider),
+    qrTokenService: ref.watch(qrTokenServiceProvider),
   );
 });
 

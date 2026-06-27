@@ -1,22 +1,31 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:eduvision_app/app/theme.dart';
 import 'package:eduvision_app/core/constants/app_constants.dart';
+import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
+import 'package:eduvision_app/data/models/dynamic_qr_model.dart';
+import 'package:eduvision_app/features/auth/providers/auth_provider.dart';
+import 'package:eduvision_app/features/student/providers/student_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
-class StudentQrScreen extends StatefulWidget {
+class StudentQrScreen extends ConsumerStatefulWidget {
   const StudentQrScreen({super.key});
 
   @override
-  State<StudentQrScreen> createState() => _StudentQrScreenState();
+  ConsumerState<StudentQrScreen> createState() => _StudentQrScreenState();
 }
 
-class _StudentQrScreenState extends State<StudentQrScreen>
+class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
   Timer? _countdownTimer;
+  StudentQrIdentityModel? _activeIdentity;
+  String? _qrPayload;
+  String? _qrError;
+  bool _isGenerating = false;
   int _secondsRemaining = 30;
 
   @override
@@ -26,14 +35,10 @@ class _StudentQrScreenState extends State<StudentQrScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _secondsRemaining = _secondsRemaining == 0 ? 30 : _secondsRemaining - 1;
-      });
-    });
+    _countdownTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tick(),
+    );
   }
 
   @override
@@ -43,80 +48,139 @@ class _StudentQrScreenState extends State<StudentQrScreen>
     super.dispose();
   }
 
+  void _tick() {
+    if (!mounted || _activeIdentity == null) {
+      return;
+    }
+
+    if (_secondsRemaining <= 1) {
+      unawaited(_regeneratePayload(_activeIdentity!));
+      return;
+    }
+
+    setState(() {
+      _secondsRemaining -= 1;
+    });
+  }
+
+  Future<void> _regeneratePayload(StudentQrIdentityModel identity) async {
+    if (_isGenerating || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isGenerating = true;
+      _qrError = null;
+    });
+
+    final result = await ref
+        .read(qrTokenServiceProvider)
+        .generateStudentToken(
+          studentUserId: identity.studentUserId,
+          studentId: identity.studentId,
+        );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (result case Success<String>(:final data)) {
+      setState(() {
+        _qrPayload = data;
+        _secondsRemaining = 30;
+        _isGenerating = false;
+      });
+      return;
+    }
+
+    if (result case Failure<String>(:final exception)) {
+      setState(() {
+        _qrError = exception.message;
+        _isGenerating = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final identityAsync = ref.watch(studentQrIdentityProvider);
+
     return ModuleScreenShell(
       title: 'My Dynamic QR',
       subtitle: 'Secure student QR for attendance and gate access.',
       fallbackRoute: AppRoutes.student,
       children: [
-        ModulePanel(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            children: [
-              _DynamicQrIdentityCard(
-                pulseAnimation: _pulseController,
-                secondsRemaining: _secondsRemaining,
-              ),
-              const SizedBox(height: 14),
-              const Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 8,
+        identityAsync.when(
+          loading: () => const _QrStatePanel(
+            icon: Icons.qr_code_2_rounded,
+            title: 'Loading student QR',
+            subtitle: 'Preparing your live attendance code.',
+          ),
+          error: (error, _) => _QrStatePanel(
+            icon: Icons.error_rounded,
+            title: 'QR unavailable',
+            subtitle: error.toString().replaceFirst('Exception: ', ''),
+            action: OutlinedButton.icon(
+              onPressed: () => ref.invalidate(studentQrIdentityProvider),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Retry'),
+            ),
+          ),
+          data: (identity) {
+            _activeIdentity = identity;
+
+            if (_qrPayload == null && !_isGenerating) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  unawaited(_regeneratePayload(identity));
+                }
+              });
+            }
+
+            return ModulePanel(
+              padding: const EdgeInsets.all(14),
+              child: Column(
                 children: [
-                  ModuleBadge(
-                    label: 'Attendance',
-                    icon: Icons.fact_check_rounded,
-                    color: AppColors.cyan,
+                  _DynamicQrIdentityCard(
+                    identity: identity,
+                    pulseAnimation: _pulseController,
+                    secondsRemaining: _secondsRemaining,
+                    payload: _qrPayload,
+                    errorMessage: _qrError,
+                    isGenerating: _isGenerating,
+                    onRefresh: () => _regeneratePayload(identity),
                   ),
-                  ModuleBadge(
-                    label: 'Gate Entry/Exit',
-                    icon: Icons.sensor_door_rounded,
-                    color: AppColors.blue,
-                  ),
-                  ModuleBadge(
-                    label: 'Dynamic',
-                    icon: Icons.autorenew_rounded,
-                    color: AppColors.amber,
+                  const SizedBox(height: 14),
+                  const Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ModuleBadge(
+                        label: 'Attendance',
+                        icon: Icons.fact_check_rounded,
+                        color: AppColors.cyan,
+                      ),
+                      ModuleBadge(
+                        label: 'Gate Entry/Exit',
+                        icon: Icons.sensor_door_rounded,
+                        color: AppColors.blue,
+                      ),
+                      ModuleBadge(
+                        label: 'Dynamic',
+                        icon: Icons.autorenew_rounded,
+                        color: AppColors.amber,
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         ),
-        const ModulePanel(
-          padding: EdgeInsets.all(14),
-          child: Column(
-            children: [
-              ModuleInfoTile(
-                title: 'Ali Khan',
-                subtitle: 'Name',
-                icon: Icons.person_rounded,
-                color: AppColors.cyan,
-              ),
-              SizedBox(height: 9),
-              ModuleInfoTile(
-                title: 'BSIT-2022-001',
-                subtitle: 'Roll No',
-                icon: Icons.badge_rounded,
-                color: AppColors.blue,
-              ),
-              SizedBox(height: 9),
-              ModuleInfoTile(
-                title: 'BSIT',
-                subtitle: 'Department',
-                icon: Icons.account_tree_rounded,
-                color: AppColors.amber,
-              ),
-              SizedBox(height: 9),
-              ModuleInfoTile(
-                title: '8th Semester',
-                subtitle: 'Semester',
-                icon: Icons.school_rounded,
-                color: Color(0xFFB48CFF),
-              ),
-            ],
-          ),
+        identityAsync.maybeWhen(
+          data: (identity) => _StudentDetailsPanel(identity: identity),
+          orElse: () => const SizedBox.shrink(),
         ),
         const ModulePanel(
           padding: EdgeInsets.all(14),
@@ -134,18 +198,34 @@ class _StudentQrScreenState extends State<StudentQrScreen>
 
 class _DynamicQrIdentityCard extends StatelessWidget {
   const _DynamicQrIdentityCard({
+    required this.identity,
     required this.pulseAnimation,
     required this.secondsRemaining,
+    required this.payload,
+    required this.errorMessage,
+    required this.isGenerating,
+    required this.onRefresh,
   });
 
+  final StudentQrIdentityModel identity;
   final Animation<double> pulseAnimation;
   final int secondsRemaining;
+  final String? payload;
+  final String? errorMessage;
+  final bool isGenerating;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final progress = secondsRemaining / 30;
+    final qrBackground = colorScheme.brightness == Brightness.dark
+        ? colorScheme.onSurface
+        : colorScheme.surface;
+    final qrForeground = colorScheme.brightness == Brightness.dark
+        ? colorScheme.surface
+        : colorScheme.onSurface;
 
     return AnimatedBuilder(
       animation: pulseAnimation,
@@ -189,14 +269,14 @@ class _DynamicQrIdentityCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Ali Khan',
+                          identity.name,
                           style: textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'BSIT-2022-001',
+                          identity.rollNo,
                           style: textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.w700,
@@ -215,41 +295,75 @@ class _DynamicQrIdentityCard extends StatelessWidget {
               const SizedBox(height: 14),
               Center(
                 child: Container(
-                  width: 218,
-                  height: 218,
-                  padding: const EdgeInsets.all(13),
+                  width: 226,
+                  height: 226,
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: colorScheme.surface.withValues(alpha: 0.54),
+                    color: qrBackground,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: colorScheme.outline.withValues(alpha: 0.38),
                     ),
                   ),
-                  child: CustomPaint(
-                    painter: _QrPreviewPainter(
-                      foreground: colorScheme.primary,
-                      accent: colorScheme.secondary,
-                      background: colorScheme.surface.withValues(alpha: 0.86),
-                    ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: payload == null || isGenerating
+                        ? _QrLoadingBox(
+                            key: const ValueKey('qr-loading'),
+                            foreground: qrForeground,
+                            background: qrBackground,
+                          )
+                        : QrImageView(
+                            key: ValueKey(payload),
+                            data: payload!,
+                            version: QrVersions.auto,
+                            errorCorrectionLevel: QrErrorCorrectLevel.M,
+                            padding: EdgeInsets.zero,
+                            backgroundColor: qrBackground,
+                            eyeStyle: QrEyeStyle(
+                              eyeShape: QrEyeShape.square,
+                              color: qrForeground,
+                            ),
+                            dataModuleStyle: QrDataModuleStyle(
+                              dataModuleShape: QrDataModuleShape.square,
+                              color: qrForeground,
+                            ),
+                          ),
                   ),
                 ),
               ),
+              if (errorMessage != null) ...[
+                const SizedBox(height: 12),
+                ModuleInfoTile(
+                  title: 'QR refresh failed',
+                  subtitle: errorMessage!,
+                  icon: Icons.error_rounded,
+                  color: colorScheme.error,
+                ),
+              ],
               const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      'Refreshes in ${secondsRemaining}s',
+                      isGenerating
+                          ? 'Refreshing QR...'
+                          : 'Refreshes in ${secondsRemaining}s',
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                         color: colorScheme.primary,
                       ),
                     ),
                   ),
-                  Icon(
-                    Icons.autorenew_rounded,
-                    color: colorScheme.secondary,
-                    size: 20,
+                  IconButton.filledTonal(
+                    tooltip: 'Refresh QR',
+                    onPressed: isGenerating ? null : onRefresh,
+                    style: IconButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.autorenew_rounded, size: 20),
                   ),
                 ],
               ),
@@ -257,7 +371,7 @@ class _DynamicQrIdentityCard extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: LinearProgressIndicator(
-                  value: progress,
+                  value: isGenerating ? null : progress,
                   minHeight: 6,
                   color: colorScheme.secondary,
                   backgroundColor: colorScheme.secondary.withValues(
@@ -273,105 +387,102 @@ class _DynamicQrIdentityCard extends StatelessWidget {
   }
 }
 
-class _QrPreviewPainter extends CustomPainter {
-  const _QrPreviewPainter({
+class _QrLoadingBox extends StatelessWidget {
+  const _QrLoadingBox({
+    super.key,
     required this.foreground,
-    required this.accent,
     required this.background,
   });
 
   final Color foreground;
-  final Color accent;
   final Color background;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final bgPaint = Paint()..color = background;
-    final fgPaint = Paint()..color = foreground;
-    final accentPaint = Paint()..color = accent;
-    final cell = size.width / 15;
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)),
-      bgPaint,
-    );
-
-    void finder(int x, int y) {
-      final rect = Rect.fromLTWH(x * cell, y * cell, cell * 4, cell * 4);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(7)),
-        fgPaint,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          rect.deflate(cell * 0.78),
-          const Radius.circular(5),
-        ),
-        bgPaint,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          rect.deflate(cell * 1.42),
-          const Radius.circular(3),
-        ),
-        fgPaint,
-      );
-    }
-
-    finder(1, 1);
-    finder(10, 1);
-    finder(1, 10);
-
-    for (var row = 0; row < 15; row++) {
-      for (var column = 0; column < 15; column++) {
-        final inFinder =
-            (column <= 4 && row <= 4) ||
-            (column >= 10 && row <= 4) ||
-            (column <= 4 && row >= 10);
-        if (inFinder) {
-          continue;
-        }
-        final seed = (row * 9 + column * 13 + row * column) % 7;
-        if (seed == 0 || seed == 2 || seed == 5) {
-          final inset = cell * (seed == 5 ? 0.25 : 0.18);
-          final rect = Rect.fromLTWH(
-            column * cell + inset,
-            row * cell + inset,
-            cell - inset * 2,
-            cell - inset * 2,
-          );
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              rect,
-              Radius.circular(math.max(2, cell * 0.16)),
-            ),
-            seed == 2 ? accentPaint : fgPaint,
-          );
-        }
-      }
-    }
-
-    final centerPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = accent.withValues(alpha: 0.52);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: size.center(Offset.zero),
-          width: size.width * 0.32,
-          height: size.height * 0.32,
-        ),
-        const Radius.circular(8),
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
       ),
-      centerPaint,
+      child: Center(
+        child: CircularProgressIndicator(strokeWidth: 2.4, color: foreground),
+      ),
     );
   }
+}
+
+class _StudentDetailsPanel extends StatelessWidget {
+  const _StudentDetailsPanel({required this.identity});
+
+  final StudentQrIdentityModel identity;
 
   @override
-  bool shouldRepaint(covariant _QrPreviewPainter oldDelegate) {
-    return foreground != oldDelegate.foreground ||
-        accent != oldDelegate.accent ||
-        background != oldDelegate.background;
+  Widget build(BuildContext context) {
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        children: [
+          ModuleInfoTile(
+            title: identity.name,
+            subtitle: 'Name',
+            icon: Icons.person_rounded,
+            color: AppColors.cyan,
+          ),
+          const SizedBox(height: 9),
+          ModuleInfoTile(
+            title: identity.rollNo,
+            subtitle: 'Roll No',
+            icon: Icons.badge_rounded,
+            color: AppColors.blue,
+          ),
+          const SizedBox(height: 9),
+          ModuleInfoTile(
+            title: identity.departmentName ?? 'Not linked',
+            subtitle: 'Department',
+            icon: Icons.account_tree_rounded,
+            color: AppColors.amber,
+          ),
+          const SizedBox(height: 9),
+          ModuleInfoTile(
+            title: identity.semesterName ?? 'Not linked',
+            subtitle: 'Semester',
+            icon: Icons.school_rounded,
+            color: const Color(0xFFB48CFF),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QrStatePanel extends StatelessWidget {
+  const _QrStatePanel({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.action,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        children: [
+          ModuleInfoTile(
+            title: title,
+            subtitle: subtitle,
+            icon: icon,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          if (action != null) ...[const SizedBox(height: 12), action!],
+        ],
+      ),
+    );
   }
 }

@@ -3,15 +3,22 @@ import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/data/models/attendance_record_model.dart';
 import 'package:eduvision_app/data/models/attendance_report_model.dart';
 import 'package:eduvision_app/data/models/attendance_session_model.dart';
+import 'package:eduvision_app/data/models/dynamic_qr_model.dart';
 import 'package:eduvision_app/data/models/timetable_model.dart';
 import 'package:eduvision_app/data/services/face_api_service.dart';
+import 'package:eduvision_app/data/services/qr_token_service.dart';
 import 'package:eduvision_app/data/services/supabase_service.dart';
 
 class AttendanceRepository {
-  const AttendanceRepository({this.supabaseService, this.faceApiService});
+  const AttendanceRepository({
+    this.supabaseService,
+    this.faceApiService,
+    this.qrTokenService,
+  });
 
   final SupabaseService? supabaseService;
   final FaceApiService? faceApiService;
+  final QrTokenService? qrTokenService;
 
   static const _attendanceSessionReportSelect = '''
     id,
@@ -43,6 +50,37 @@ class AttendanceRepository {
     total_frames,
     created_at,
     students(name, roll_no)
+  ''';
+
+  static const _studentQrIdentitySelect = '''
+    id,
+    user_id,
+    roll_no,
+    name,
+    department_id,
+    batch_id,
+    semester_id,
+    departments(name),
+    batches(name),
+    semesters(name)
+  ''';
+
+  static const _activeAttendanceSessionSelect = '''
+    id,
+    teacher_id,
+    subject_id,
+    department_id,
+    batch_id,
+    semester_id,
+    session_date,
+    start_time,
+    end_time,
+    status,
+    created_at,
+    subjects(name),
+    departments(name),
+    batches(name),
+    semesters(name)
   ''';
 
   static const _attendanceRecordReportSelect = '''
@@ -329,6 +367,204 @@ class AttendanceRepository {
         AppException(
           message: 'Unable to save demo attendance record right now.',
           code: 'demo_attendance_record_save_failed',
+        ),
+      );
+    }
+  }
+
+  Future<Result<StudentQrIdentityModel>> getStudentQrIdentity({
+    required String studentUserId,
+  }) async {
+    if (_shouldUseMockData) {
+      return Result.success(_mockStudentQrIdentity());
+    }
+
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final student = await _loadStudentQrIdentity(studentUserId);
+
+      if (student == null) {
+        return const Result.failure(
+          AppException(
+            message: 'No student profile was found for this account.',
+            code: 'student_qr_identity_not_found',
+          ),
+        );
+      }
+
+      return Result.success(student);
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to load student QR identity right now.',
+          code: 'student_qr_identity_load_failed',
+        ),
+      );
+    }
+  }
+
+  Future<Result<QrAttendanceMarkResult>> markDynamicQrAttendanceFromPayload({
+    required String teacherUserId,
+    required String payload,
+  }) async {
+    final tokenResult = (qrTokenService ?? const QrTokenService())
+        .parseAttendancePayload(payload: payload);
+
+    if (tokenResult case Failure<DynamicQrPayload>(:final exception)) {
+      return Result.failure(exception);
+    }
+
+    final token = (tokenResult as Success<DynamicQrPayload>).data;
+
+    if (_shouldUseMockData) {
+      final now = DateTime.now();
+
+      return Result.success(
+        QrAttendanceMarkResult(
+          studentName: 'Ali Khan',
+          rollNo: 'BSIT-2022-001',
+          method: 'Dynamic QR',
+          status: 'Attendance marked',
+          message: 'Mock dynamic QR attendance marked successfully.',
+          markedAt: now,
+          alreadyMarked: false,
+        ),
+      );
+    }
+
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final teacherId = await _resolveTeacherRecordId(teacherUserId);
+
+      if (teacherId == null) {
+        return const Result.failure(
+          AppException(
+            message: 'No teacher profile was found for this account.',
+            code: 'teacher_profile_not_found',
+          ),
+        );
+      }
+
+      final session = await _findActiveAttendanceSession(teacherId);
+
+      if (session == null) {
+        return const Result.failure(
+          AppException(
+            message: 'Start an active attendance session before scanning QR.',
+            code: 'no_active_attendance_session',
+          ),
+        );
+      }
+
+      final student = await _loadStudentQrIdentity(token.lookupId);
+
+      if (student == null) {
+        return const Result.failure(
+          AppException(
+            message: 'No student profile was found for this QR code.',
+            code: 'qr_student_not_found',
+          ),
+        );
+      }
+
+      final isEnrolled = await _isStudentEnrolledForSession(
+        studentId: student.studentId,
+        session: session,
+      );
+
+      if (!isEnrolled) {
+        return const Result.failure(
+          AppException(
+            message:
+                'This student is not enrolled in the active subject/class.',
+            code: 'student_not_enrolled',
+          ),
+        );
+      }
+
+      final sessionId = session['id'] as String;
+      final existingRecord = await client
+          .from('attendance_records')
+          .select('id, created_at')
+          .eq('session_id', sessionId)
+          .eq('student_id', student.studentId)
+          .maybeSingle();
+
+      if (existingRecord != null) {
+        return Result.success(
+          QrAttendanceMarkResult(
+            studentName: student.name,
+            rollNo: student.rollNo,
+            method: 'Dynamic QR',
+            status: 'Already marked',
+            message: 'Attendance is already marked for this session.',
+            markedAt:
+                DateTime.tryParse(
+                  existingRecord['created_at']?.toString() ?? '',
+                ) ??
+                DateTime.now(),
+            alreadyMarked: true,
+          ),
+        );
+      }
+
+      final now = DateTime.now();
+      final saveResult = await saveAttendanceRecord(
+        record: AttendanceRecordModel(
+          id: '',
+          sessionId: sessionId,
+          studentId: student.studentId,
+          attendancePercentage: 100,
+          attendanceMethod: 'dynamic_qr',
+          attendanceStatus: 'present',
+          framesDetected: 0,
+          totalFrames: 0,
+          createdAt: now,
+        ),
+      );
+
+      if (saveResult case Failure<void>(:final exception)) {
+        return Result.failure(exception);
+      }
+
+      return Result.success(
+        QrAttendanceMarkResult(
+          studentName: student.name,
+          rollNo: student.rollNo,
+          method: 'Dynamic QR',
+          status: 'Attendance marked',
+          message: 'Dynamic QR attendance marked successfully.',
+          markedAt: now,
+          alreadyMarked: false,
+        ),
+      );
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to mark dynamic QR attendance right now.',
+          code: 'dynamic_qr_attendance_save_failed',
         ),
       );
     }
@@ -724,6 +960,110 @@ class AttendanceRepository {
     return reports;
   }
 
+  Future<StudentQrIdentityModel?> _loadStudentQrIdentity(
+    String studentIdentifier,
+  ) async {
+    final client = supabaseService?.client;
+
+    if (client == null || studentIdentifier.trim().isEmpty) {
+      return null;
+    }
+
+    final normalizedIdentifier = studentIdentifier.trim();
+    final studentByUserId = await client
+        .from('students')
+        .select(_studentQrIdentitySelect)
+        .eq('user_id', normalizedIdentifier)
+        .maybeSingle();
+
+    if (studentByUserId != null) {
+      return StudentQrIdentityModel.fromJson(
+        Map<String, dynamic>.from(studentByUserId),
+      );
+    }
+
+    final studentById = await client
+        .from('students')
+        .select(_studentQrIdentitySelect)
+        .eq('id', normalizedIdentifier)
+        .maybeSingle();
+
+    if (studentById != null) {
+      return StudentQrIdentityModel.fromJson(
+        Map<String, dynamic>.from(studentById),
+      );
+    }
+
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _findActiveAttendanceSession(
+    String teacherId,
+  ) async {
+    final client = supabaseService?.client;
+
+    if (client == null) {
+      return null;
+    }
+
+    final now = DateTime.now();
+    final rows = await client
+        .from('attendance_sessions')
+        .select(_activeAttendanceSessionSelect)
+        .eq('teacher_id', teacherId)
+        .eq('status', 'active')
+        .eq('session_date', _dateOnly(now))
+        .order('created_at', ascending: false)
+        .order('start_time', ascending: false);
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    final currentMinutes = (now.hour * 60) + now.minute;
+
+    for (final row in rows) {
+      final session = Map<String, dynamic>.from(row);
+      final startMinutes = _timeToMinutes(session['start_time'].toString());
+      final endMinutes = _timeToMinutes(session['end_time'].toString());
+
+      if (startMinutes == null || endMinutes == null) {
+        continue;
+      }
+
+      if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {
+        return session;
+      }
+    }
+
+    return Map<String, dynamic>.from(rows.first);
+  }
+
+  Future<bool> _isStudentEnrolledForSession({
+    required String studentId,
+    required Map<String, dynamic> session,
+  }) async {
+    final client = supabaseService?.client;
+
+    if (client == null) {
+      return false;
+    }
+
+    final row = await client
+        .from('student_subjects')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('subject_id', session['subject_id'] as String)
+        .eq('department_id', session['department_id'] as String)
+        .eq('batch_id', session['batch_id'] as String)
+        .eq('semester_id', session['semester_id'] as String)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+    return row != null;
+  }
+
   Future<String?> _resolveTeacherRecordId(String teacherId) async {
     final client = supabaseService?.client;
 
@@ -952,6 +1292,18 @@ class AttendanceRepository {
         semesterName: '8th Semester',
       ),
     ];
+  }
+
+  StudentQrIdentityModel _mockStudentQrIdentity() {
+    return const StudentQrIdentityModel(
+      studentUserId: 'mock-app-user-student',
+      studentId: 'mock-student-001',
+      name: 'Ali Khan',
+      rollNo: 'BSIT-2022-001',
+      departmentName: 'Computer Science',
+      batchName: 'BSIT 2022',
+      semesterName: '8th Semester',
+    );
   }
 
   List<AttendanceReportModel> _mockAttendanceReports() {
