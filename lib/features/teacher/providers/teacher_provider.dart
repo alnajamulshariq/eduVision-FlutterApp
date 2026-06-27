@@ -1,5 +1,6 @@
 import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/data/models/gate_log_model.dart';
+import 'package:eduvision_app/data/models/teacher_anonymous_message_model.dart';
 import 'package:eduvision_app/data/models/timetable_model.dart';
 import 'package:eduvision_app/data/repositories/attendance_repository.dart';
 import 'package:eduvision_app/data/repositories/gate_repository.dart';
@@ -51,6 +52,33 @@ final teacherGateStatusProvider = FutureProvider<List<GateLogModel>>((
 
   return [];
 });
+
+final teacherAnonymousMessagesProvider =
+    FutureProvider<List<TeacherAnonymousMessageModel>>((ref) async {
+      final currentUser = ref.watch(authControllerProvider).user;
+
+      if (currentUser == null) {
+        return [];
+      }
+
+      final result = await ref
+          .watch(teacherMessageRepositoryProvider)
+          .getTeacherMessages(teacherId: currentUser.id);
+
+      if (result case Success<List<TeacherAnonymousMessageModel>>(
+        :final data,
+      )) {
+        return data;
+      }
+
+      if (result case Failure<List<TeacherAnonymousMessageModel>>(
+        :final exception,
+      )) {
+        throw Exception(exception.message);
+      }
+
+      return [];
+    });
 
 final teacherTimetableProvider = FutureProvider<List<TimetableModel>>((
   ref,

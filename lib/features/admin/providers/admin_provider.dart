@@ -1,4 +1,5 @@
 import 'package:eduvision_app/core/utils/result.dart';
+import 'package:eduvision_app/data/models/anonymous_message_model.dart';
 import 'package:eduvision_app/data/models/gate_log_model.dart';
 import 'package:eduvision_app/data/repositories/admin_repository.dart';
 import 'package:eduvision_app/data/repositories/attendance_repository.dart';
@@ -44,3 +45,20 @@ final adminGateLogsProvider = FutureProvider<List<GateLogModel>>((ref) async {
 final adminMessageRepositoryProvider = Provider<MessageRepository>((ref) {
   return MessageRepository(supabaseService: ref.watch(supabaseServiceProvider));
 });
+
+final adminReportedMessagesProvider =
+    FutureProvider<List<AnonymousMessageModel>>((ref) async {
+      final result = await ref
+          .watch(adminMessageRepositoryProvider)
+          .getAdminReportedMessages();
+
+      if (result case Success<List<AnonymousMessageModel>>(:final data)) {
+        return data;
+      }
+
+      if (result case Failure<List<AnonymousMessageModel>>(:final exception)) {
+        throw Exception(exception.message);
+      }
+
+      return [];
+    });

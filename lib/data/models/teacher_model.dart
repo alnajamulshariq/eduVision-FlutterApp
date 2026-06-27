@@ -6,6 +6,9 @@ class TeacherModel {
     required this.name,
     required this.departmentId,
     required this.isActive,
+    this.subjectId,
+    this.subjectName,
+    this.departmentName,
   });
 
   final String id;
@@ -14,6 +17,9 @@ class TeacherModel {
   final String name;
   final String departmentId;
   final bool isActive;
+  final String? subjectId;
+  final String? subjectName;
+  final String? departmentName;
 
   factory TeacherModel.fromJson(Map<String, dynamic> json) {
     return TeacherModel(
@@ -23,6 +29,9 @@ class TeacherModel {
       name: json['name'] as String,
       departmentId: json['department_id'] as String,
       isActive: json['is_active'] as bool,
+      subjectId: json['subject_id'] as String?,
+      subjectName: json['subject_name'] as String?,
+      departmentName: _nestedName(json, 'departments'),
     );
   }
 
@@ -34,6 +43,8 @@ class TeacherModel {
       'name': name,
       'department_id': departmentId,
       'is_active': isActive,
+      'subject_id': subjectId,
+      'subject_name': subjectName,
     };
   }
 
@@ -44,6 +55,9 @@ class TeacherModel {
     String? name,
     String? departmentId,
     bool? isActive,
+    String? subjectId,
+    String? subjectName,
+    String? departmentName,
   }) {
     return TeacherModel(
       id: id ?? this.id,
@@ -52,6 +66,32 @@ class TeacherModel {
       name: name ?? this.name,
       departmentId: departmentId ?? this.departmentId,
       isActive: isActive ?? this.isActive,
+      subjectId: subjectId ?? this.subjectId,
+      subjectName: subjectName ?? this.subjectName,
+      departmentName: departmentName ?? this.departmentName,
     );
+  }
+
+  static Map<String, dynamic>? _mapOrNull(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+
+    return null;
+  }
+
+  static String? _nestedName(Map<String, dynamic> source, String key) {
+    final nested = _mapOrNull(source[key]);
+    final name = nested?['name'] as String?;
+
+    if (name == null || name.trim().isEmpty) {
+      return null;
+    }
+
+    return name.trim();
   }
 }

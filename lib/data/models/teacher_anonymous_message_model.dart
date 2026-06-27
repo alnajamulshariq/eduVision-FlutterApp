@@ -1,7 +1,6 @@
-class AnonymousMessageModel {
-  const AnonymousMessageModel({
+class TeacherAnonymousMessageModel {
+  const TeacherAnonymousMessageModel({
     required this.id,
-    required this.studentId,
     required this.teacherId,
     required this.subjectId,
     required this.message,
@@ -11,19 +10,11 @@ class AnonymousMessageModel {
     required this.createdAt,
     this.resolvedAt,
     this.subjectName,
-    this.teacherName,
-    this.studentName,
-    this.studentRollNo,
-    this.departmentName,
-    this.batchName,
-    this.semesterName,
     this.reportStatus,
-    this.reportedByTeacherName,
     this.reportCreatedAt,
   });
 
   final String id;
-  final String studentId;
   final String teacherId;
   final String? subjectId;
   final String message;
@@ -32,26 +23,15 @@ class AnonymousMessageModel {
   final String? reportReason;
   final DateTime createdAt;
   final DateTime? resolvedAt;
-
-  // Display-only joined fields. Teacher UI must not render student fields.
   final String? subjectName;
-  final String? teacherName;
-  final String? studentName;
-  final String? studentRollNo;
-  final String? departmentName;
-  final String? batchName;
-  final String? semesterName;
   final String? reportStatus;
-  final String? reportedByTeacherName;
   final DateTime? reportCreatedAt;
 
-  factory AnonymousMessageModel.fromJson(Map<String, dynamic> json) {
-    final student = _mapOrNull(json['students']);
+  factory TeacherAnonymousMessageModel.fromJson(Map<String, dynamic> json) {
     final report = _firstMapFromRelation(json['message_reports']);
 
-    return AnonymousMessageModel(
+    return TeacherAnonymousMessageModel(
       id: json['id'] as String,
-      studentId: json['student_id'] as String,
       teacherId: json['teacher_id'] as String,
       subjectId: json['subject_id'] as String?,
       message: json['message'] as String,
@@ -63,36 +43,13 @@ class AnonymousMessageModel {
           ? null
           : DateTime.parse(json['resolved_at'] as String),
       subjectName: _nestedName(json, 'subjects'),
-      teacherName: _nestedName(json, 'teachers'),
-      studentName: _firstText(json['student_name'], student?['name']),
-      studentRollNo: _firstText(json['student_roll_no'], student?['roll_no']),
-      departmentName: _nestedName(student, 'departments'),
-      batchName: _nestedName(student, 'batches'),
-      semesterName: _nestedName(student, 'semesters'),
       reportStatus: report?['status'] as String?,
-      reportedByTeacherName: _nestedName(report, 'teachers'),
       reportCreatedAt: _parseOptionalDateTime(report?['created_at']),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'student_id': studentId,
-      'teacher_id': teacherId,
-      'subject_id': subjectId,
-      'message': message,
-      'status': status,
-      'is_reported': isReported,
-      'report_reason': reportReason,
-      'created_at': createdAt.toIso8601String(),
-      'resolved_at': resolvedAt?.toIso8601String(),
-    };
-  }
-
-  AnonymousMessageModel copyWith({
+  TeacherAnonymousMessageModel copyWith({
     String? id,
-    String? studentId,
     String? teacherId,
     String? subjectId,
     String? message,
@@ -102,19 +59,11 @@ class AnonymousMessageModel {
     DateTime? createdAt,
     DateTime? resolvedAt,
     String? subjectName,
-    String? teacherName,
-    String? studentName,
-    String? studentRollNo,
-    String? departmentName,
-    String? batchName,
-    String? semesterName,
     String? reportStatus,
-    String? reportedByTeacherName,
     DateTime? reportCreatedAt,
   }) {
-    return AnonymousMessageModel(
+    return TeacherAnonymousMessageModel(
       id: id ?? this.id,
-      studentId: studentId ?? this.studentId,
       teacherId: teacherId ?? this.teacherId,
       subjectId: subjectId ?? this.subjectId,
       message: message ?? this.message,
@@ -124,15 +73,7 @@ class AnonymousMessageModel {
       createdAt: createdAt ?? this.createdAt,
       resolvedAt: resolvedAt ?? this.resolvedAt,
       subjectName: subjectName ?? this.subjectName,
-      teacherName: teacherName ?? this.teacherName,
-      studentName: studentName ?? this.studentName,
-      studentRollNo: studentRollNo ?? this.studentRollNo,
-      departmentName: departmentName ?? this.departmentName,
-      batchName: batchName ?? this.batchName,
-      semesterName: semesterName ?? this.semesterName,
       reportStatus: reportStatus ?? this.reportStatus,
-      reportedByTeacherName:
-          reportedByTeacherName ?? this.reportedByTeacherName,
       reportCreatedAt: reportCreatedAt ?? this.reportCreatedAt,
     );
   }
@@ -173,8 +114,8 @@ class AnonymousMessageModel {
     return null;
   }
 
-  static String? _nestedName(Map<String, dynamic>? source, String key) {
-    final nested = _mapOrNull(source?[key]);
+  static String? _nestedName(Map<String, dynamic> source, String key) {
+    final nested = _mapOrNull(source[key]);
     final name = nested?['name'] as String?;
 
     if (name == null || name.trim().isEmpty) {

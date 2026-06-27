@@ -1,52 +1,166 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
+import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
+import 'package:eduvision_app/data/models/teacher_anonymous_message_model.dart';
+import 'package:eduvision_app/features/teacher/providers/teacher_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-const _teacherMessages = [
-  _AnonymousFeedback(
-    message: 'Sir, Lecture 4 was difficult to understand.',
-    subject: 'Database Systems',
-    received: 'Today, 10:30 AM',
-    status: 'New',
-  ),
-  _AnonymousFeedback(
-    message: 'Please provide additional practice exercises.',
-    subject: 'Database Systems',
-    received: 'Yesterday, 02:15 PM',
-    status: 'Resolved',
-  ),
-  _AnonymousFeedback(
-    message: 'The classroom projector is not working properly.',
-    subject: 'Database Systems',
-    received: 'Today, 09:15 AM',
-    status: 'New',
-  ),
-];
-
-class TeacherAnonymousMessagesScreen extends StatelessWidget {
+class TeacherAnonymousMessagesScreen extends ConsumerStatefulWidget {
   const TeacherAnonymousMessagesScreen({super.key});
 
   @override
+  ConsumerState<TeacherAnonymousMessagesScreen> createState() =>
+      _TeacherAnonymousMessagesScreenState();
+}
+
+class _TeacherAnonymousMessagesScreenState
+    extends ConsumerState<TeacherAnonymousMessagesScreen> {
+  final _busyMessageIds = <String>{};
+
+  Future<void> _markResolved(TeacherAnonymousMessageModel message) async {
+    if (_busyMessageIds.contains(message.id) || message.status == 'resolved') {
+      return;
+    }
+
+    setState(() => _busyMessageIds.add(message.id));
+
+    final result = await ref
+        .read(teacherMessageRepositoryProvider)
+        .markMessageResolved(messageId: message.id);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _busyMessageIds.remove(message.id));
+
+    switch (result) {
+      case Success<void>():
+        ref.invalidate(teacherAnonymousMessagesProvider);
+        showModuleSnackBar(context, 'Message marked resolved.');
+      case Failure<void>(:final exception):
+        showModuleSnackBar(context, exception.message);
+    }
+  }
+
+  Future<void> _reportMessage(TeacherAnonymousMessageModel message) async {
+    if (_busyMessageIds.contains(message.id) || message.isReported) {
+      return;
+    }
+
+    setState(() => _busyMessageIds.add(message.id));
+
+    final result = await ref
+        .read(teacherMessageRepositoryProvider)
+        .reportMessage(
+          messageId: message.id,
+          reportReason: 'Reported by teacher for admin review',
+        );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _busyMessageIds.remove(message.id));
+
+    switch (result) {
+      case Success<void>():
+        ref.invalidate(teacherAnonymousMessagesProvider);
+        showModuleSnackBar(context, 'Message reported to admin.');
+      case Failure<void>(:final exception):
+        showModuleSnackBar(context, exception.message);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const ModuleScreenShell(
+    final messagesAsync = ref.watch(teacherAnonymousMessagesProvider);
+
+    final messagePanels = messagesAsync.when(
+      loading: () => <Widget>[const _MessagesLoadingPanel()],
+      error: (error, _) => <Widget>[
+        _MessagesErrorPanel(message: _cleanErrorMessage(error)),
+      ],
+      data: (messages) => <Widget>[
+        _MessageSummaryCard(messages: messages),
+        _AnonymousMessageList(
+          messages: messages,
+          busyMessageIds: _busyMessageIds,
+          onMarkResolved: _markResolved,
+          onReport: _reportMessage,
+        ),
+      ],
+    );
+
+    return ModuleScreenShell(
       title: 'Anonymous Messages',
       subtitle: 'Read and manage student feedback.',
       fallbackRoute: AppRoutes.teacher,
-      children: [
-        _MessageSummaryCard(),
-        _AnonymousMessageList(messages: _teacherMessages),
-        _TeacherPrivacyNote(),
-      ],
+      children: [...messagePanels, const _TeacherPrivacyNote()],
+    );
+  }
+}
+
+class _MessagesLoadingPanel extends StatelessWidget {
+  const _MessagesLoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Loading messages',
+        subtitle: 'Fetching anonymous feedback from backend.',
+        icon: Icons.hourglass_top_rounded,
+        color: colorScheme.primary,
+        trailing: ModuleBadge(label: 'Loading', color: colorScheme.primary),
+      ),
+    );
+  }
+}
+
+class _MessagesErrorPanel extends StatelessWidget {
+  const _MessagesErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Unable to load messages',
+        subtitle: message,
+        icon: Icons.error_outline_rounded,
+        color: colorScheme.error,
+        trailing: ModuleBadge(label: 'Error', color: colorScheme.error),
+      ),
     );
   }
 }
 
 class _MessageSummaryCard extends StatelessWidget {
-  const _MessageSummaryCard();
+  const _MessageSummaryCard({required this.messages});
+
+  final List<TeacherAnonymousMessageModel> messages;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final newCount = messages
+        .where((message) => message.status == 'new')
+        .length;
+    final resolvedCount = messages
+        .where((message) => message.status == 'resolved')
+        .length;
+    final reportedCount = messages
+        .where((message) => message.isReported || message.status == 'reported')
+        .length;
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -63,7 +177,7 @@ class _MessageSummaryCard extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'New',
-                  value: '3',
+                  value: newCount.toString(),
                   icon: Icons.mark_chat_unread_rounded,
                   color: colorScheme.primary,
                 ),
@@ -72,7 +186,7 @@ class _MessageSummaryCard extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Resolved',
-                  value: '1',
+                  value: resolvedCount.toString(),
                   icon: Icons.check_circle_rounded,
                   color: colorScheme.secondary,
                 ),
@@ -82,7 +196,7 @@ class _MessageSummaryCard extends StatelessWidget {
           const SizedBox(height: 8),
           ModuleMetricCard(
             label: 'Reported',
-            value: '1',
+            value: reportedCount.toString(),
             icon: Icons.report_rounded,
             color: colorScheme.tertiary,
           ),
@@ -93,12 +207,22 @@ class _MessageSummaryCard extends StatelessWidget {
 }
 
 class _AnonymousMessageList extends StatelessWidget {
-  const _AnonymousMessageList({required this.messages});
+  const _AnonymousMessageList({
+    required this.messages,
+    required this.busyMessageIds,
+    required this.onMarkResolved,
+    required this.onReport,
+  });
 
-  final List<_AnonymousFeedback> messages;
+  final List<TeacherAnonymousMessageModel> messages;
+  final Set<String> busyMessageIds;
+  final ValueChanged<TeacherAnonymousMessageModel> onMarkResolved;
+  final ValueChanged<TeacherAnonymousMessageModel> onReport;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return ModulePanel(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -109,10 +233,23 @@ class _AnonymousMessageList extends StatelessWidget {
             icon: Icons.feedback_rounded,
           ),
           const SizedBox(height: 12),
-          for (final message in messages) ...[
-            _AnonymousMessageCard(feedback: message),
-            if (message != messages.last) const SizedBox(height: 10),
-          ],
+          if (messages.isEmpty)
+            ModuleInfoTile(
+              title: 'No anonymous messages yet',
+              subtitle: 'Student feedback will appear here anonymously.',
+              icon: Icons.inbox_rounded,
+              color: colorScheme.error,
+            )
+          else
+            for (final message in messages) ...[
+              _AnonymousMessageCard(
+                message: message,
+                isBusy: busyMessageIds.contains(message.id),
+                onMarkResolved: () => onMarkResolved(message),
+                onReport: () => onReport(message),
+              ),
+              if (message != messages.last) const SizedBox(height: 10),
+            ],
         ],
       ),
     );
@@ -120,16 +257,29 @@ class _AnonymousMessageList extends StatelessWidget {
 }
 
 class _AnonymousMessageCard extends StatelessWidget {
-  const _AnonymousMessageCard({required this.feedback});
+  const _AnonymousMessageCard({
+    required this.message,
+    required this.isBusy,
+    required this.onMarkResolved,
+    required this.onReport,
+  });
 
-  final _AnonymousFeedback feedback;
+  final TeacherAnonymousMessageModel message;
+  final bool isBusy;
+  final VoidCallback onMarkResolved;
+  final VoidCallback onReport;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final resolved = feedback.status == 'Resolved';
-    final statusColor = resolved ? colorScheme.secondary : colorScheme.primary;
+    final resolved = message.status == 'resolved';
+    final reported = message.isReported || message.status == 'reported';
+    final statusColor = reported
+        ? colorScheme.tertiary
+        : resolved
+        ? colorScheme.secondary
+        : colorScheme.primary;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -151,8 +301,10 @@ class _AnonymousMessageCard extends StatelessWidget {
                 color: colorScheme.secondary,
               ),
               ModuleBadge(
-                label: feedback.status,
-                icon: resolved
+                label: _statusLabel(message),
+                icon: reported
+                    ? Icons.report_rounded
+                    : resolved
                     ? Icons.check_circle_rounded
                     : Icons.fiber_new_rounded,
                 color: statusColor,
@@ -161,7 +313,7 @@ class _AnonymousMessageCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '"${feedback.message}"',
+            '"${message.message}"',
             style: textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w800,
               height: 1.35,
@@ -173,15 +325,21 @@ class _AnonymousMessageCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               ModuleBadge(
-                label: 'Subject: ${feedback.subject}',
+                label: 'Subject: ${_subjectLabel(message)}',
                 icon: Icons.storage_rounded,
                 color: colorScheme.primary,
               ),
               ModuleBadge(
-                label: 'Received: ${feedback.received}',
+                label: 'Received: ${_formatDateTime(message.createdAt)}',
                 icon: Icons.schedule_rounded,
                 color: colorScheme.tertiary,
               ),
+              if (message.reportReason?.trim().isNotEmpty ?? false)
+                ModuleBadge(
+                  label: 'Report: ${message.reportReason}',
+                  icon: Icons.rule_rounded,
+                  color: colorScheme.tertiary,
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -189,14 +347,9 @@ class _AnonymousMessageCard extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    showModuleSnackBar(
-                      context,
-                      'Message marked resolved in preview.',
-                    );
-                  },
+                  onPressed: isBusy || resolved ? null : onMarkResolved,
                   icon: const Icon(Icons.check_rounded, size: 18),
-                  label: const Text('Mark Resolved'),
+                  label: Text(resolved ? 'Resolved' : 'Mark Resolved'),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 44),
                     padding: const EdgeInsets.symmetric(
@@ -209,14 +362,9 @@ class _AnonymousMessageCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    showModuleSnackBar(
-                      context,
-                      'Message reported to admin in preview.',
-                    );
-                  },
+                  onPressed: isBusy || reported ? null : onReport,
                   icon: const Icon(Icons.report_rounded, size: 18),
-                  label: const Text('Report'),
+                  label: Text(reported ? 'Reported' : 'Report'),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 44),
                     padding: const EdgeInsets.symmetric(
@@ -292,16 +440,66 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _AnonymousFeedback {
-  const _AnonymousFeedback({
-    required this.message,
-    required this.subject,
-    required this.received,
-    required this.status,
-  });
+String _subjectLabel(TeacherAnonymousMessageModel message) {
+  final subjectName = message.subjectName?.trim();
 
-  final String message;
-  final String subject;
-  final String received;
-  final String status;
+  if (subjectName != null && subjectName.isNotEmpty) {
+    return subjectName;
+  }
+
+  return 'General Feedback';
+}
+
+String _statusLabel(TeacherAnonymousMessageModel message) {
+  if (message.isReported || message.status == 'reported') {
+    return 'Reported';
+  }
+
+  if (message.status == 'resolved') {
+    return 'Resolved';
+  }
+
+  return 'New';
+}
+
+String _formatDateTime(DateTime value) {
+  final localValue = value.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final messageDate = DateTime(
+    localValue.year,
+    localValue.month,
+    localValue.day,
+  );
+  final time = _formatTime(localValue);
+
+  if (messageDate == today) {
+    return 'Today, $time';
+  }
+
+  if (messageDate == today.subtract(const Duration(days: 1))) {
+    return 'Yesterday, $time';
+  }
+
+  final day = localValue.day.toString().padLeft(2, '0');
+  final month = localValue.month.toString().padLeft(2, '0');
+  final year = localValue.year.toString();
+
+  return '$day/$month/$year, $time';
+}
+
+String _formatTime(DateTime value) {
+  final period = value.hour >= 12 ? 'PM' : 'AM';
+  final displayHour = value.hour == 0
+      ? 12
+      : value.hour > 12
+      ? value.hour - 12
+      : value.hour;
+  final displayMinute = value.minute.toString().padLeft(2, '0');
+
+  return '$displayHour:$displayMinute $period';
+}
+
+String _cleanErrorMessage(Object error) {
+  return error.toString().replaceFirst('Exception: ', '');
 }

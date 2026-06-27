@@ -1,50 +1,117 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
+import 'package:eduvision_app/data/models/anonymous_message_model.dart';
+import 'package:eduvision_app/features/admin/providers/admin_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class AdminMessageReportsScreen extends StatefulWidget {
+class AdminMessageReportsScreen extends ConsumerStatefulWidget {
   const AdminMessageReportsScreen({super.key});
 
   @override
-  State<AdminMessageReportsScreen> createState() =>
+  ConsumerState<AdminMessageReportsScreen> createState() =>
       _AdminMessageReportsScreenState();
 }
 
-class _AdminMessageReportsScreenState extends State<AdminMessageReportsScreen> {
-  bool _senderRevealed = false;
+class _AdminMessageReportsScreenState
+    extends ConsumerState<AdminMessageReportsScreen> {
+  final _revealedMessageIds = <String>{};
 
-  void _toggleSenderReveal() {
-    setState(() => _senderRevealed = !_senderRevealed);
-    if (_senderRevealed) {
-      showModuleSnackBar(context, 'Sender revealed for preview.');
+  void _toggleSenderReveal(String messageId) {
+    setState(() {
+      if (!_revealedMessageIds.add(messageId)) {
+        _revealedMessageIds.remove(messageId);
+      }
+    });
+
+    if (_revealedMessageIds.contains(messageId)) {
+      showModuleSnackBar(context, 'Sender revealed for admin review.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ModuleScreenShell(
-      title: 'Message Reports',
-      subtitle: 'Review reported anonymous messages preview.',
-      fallbackRoute: AppRoutes.admin,
-      children: [
-        const _ReportOverviewCard(),
-        const _ReportedMessageCard(),
-        _InvestigationPanel(
-          senderRevealed: _senderRevealed,
+    final reportsAsync = ref.watch(adminReportedMessagesProvider);
+
+    final reportPanels = reportsAsync.when(
+      loading: () => <Widget>[const _ReportsLoadingPanel()],
+      error: (error, _) => <Widget>[
+        _ReportsErrorPanel(message: _cleanErrorMessage(error)),
+      ],
+      data: (reports) => <Widget>[
+        _ReportOverviewCard(reports: reports),
+        _ReportedMessagesList(
+          reports: reports,
+          revealedMessageIds: _revealedMessageIds,
           onRevealSender: _toggleSenderReveal,
         ),
-        const _PrivacyAccountabilityCard(),
       ],
+    );
+
+    return ModuleScreenShell(
+      title: 'Message Reports',
+      subtitle: 'Review reported anonymous messages from backend.',
+      fallbackRoute: AppRoutes.admin,
+      children: [...reportPanels, const _PrivacyAccountabilityCard()],
+    );
+  }
+}
+
+class _ReportsLoadingPanel extends StatelessWidget {
+  const _ReportsLoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Loading reports',
+        subtitle: 'Fetching reported anonymous messages from backend.',
+        icon: Icons.hourglass_top_rounded,
+        color: colorScheme.primary,
+        trailing: ModuleBadge(label: 'Loading', color: colorScheme.primary),
+      ),
+    );
+  }
+}
+
+class _ReportsErrorPanel extends StatelessWidget {
+  const _ReportsErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Unable to load message reports',
+        subtitle: message,
+        icon: Icons.error_outline_rounded,
+        color: colorScheme.error,
+        trailing: ModuleBadge(label: 'Error', color: colorScheme.error),
+      ),
     );
   }
 }
 
 class _ReportOverviewCard extends StatelessWidget {
-  const _ReportOverviewCard();
+  const _ReportOverviewCard({required this.reports});
+
+  final List<AnonymousMessageModel> reports;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final pendingCount = reports.where((report) {
+      final status = report.reportStatus ?? report.status;
+      return status == 'pending' || status == 'reported';
+    }).length;
+    final reviewedCount = reports.length - pendingCount;
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -61,7 +128,7 @@ class _ReportOverviewCard extends StatelessWidget {
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Pending',
-                  value: '1',
+                  value: pendingCount.toString(),
                   icon: Icons.hourglass_top_rounded,
                   color: colorScheme.tertiary,
                 ),
@@ -69,8 +136,8 @@ class _ReportOverviewCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: ModuleMetricCard(
-                  label: 'Resolved',
-                  value: '2',
+                  label: 'Reviewed',
+                  value: reviewedCount.toString(),
                   icon: Icons.check_circle_rounded,
                   color: colorScheme.secondary,
                 ),
@@ -79,9 +146,9 @@ class _ReportOverviewCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           ModuleMetricCard(
-            label: 'Safety Alerts',
-            value: '0',
-            icon: Icons.health_and_safety_rounded,
+            label: 'Reported Messages',
+            value: reports.length.toString(),
+            icon: Icons.report_rounded,
             color: colorScheme.primary,
           ),
         ],
@@ -90,13 +157,20 @@ class _ReportOverviewCard extends StatelessWidget {
   }
 }
 
-class _ReportedMessageCard extends StatelessWidget {
-  const _ReportedMessageCard();
+class _ReportedMessagesList extends StatelessWidget {
+  const _ReportedMessagesList({
+    required this.reports,
+    required this.revealedMessageIds,
+    required this.onRevealSender,
+  });
+
+  final List<AnonymousMessageModel> reports;
+  final Set<String> revealedMessageIds;
+  final ValueChanged<String> onRevealSender;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -104,32 +178,83 @@ class _ReportedMessageCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionTitle(
-            title: 'Reported Message',
+            title: 'Reported Messages',
             icon: Icons.report_rounded,
           ),
-          const SizedBox(height: 8),
-          ModuleBadge(
-            label: 'Pending Review',
-            icon: Icons.pending_actions_rounded,
-            color: colorScheme.tertiary,
+          const SizedBox(height: 12),
+          if (reports.isEmpty)
+            ModuleInfoTile(
+              title: 'No reported messages',
+              subtitle: 'Teacher reports will appear here for admin review.',
+              icon: Icons.inbox_rounded,
+              color: colorScheme.error,
+            )
+          else
+            for (final report in reports) ...[
+              _ReportedMessageCard(
+                report: report,
+                senderRevealed: revealedMessageIds.contains(report.id),
+                onRevealSender: () => onRevealSender(report.id),
+              ),
+              if (report != reports.last) const SizedBox(height: 10),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportedMessageCard extends StatelessWidget {
+  const _ReportedMessageCard({
+    required this.report,
+    required this.senderRevealed,
+    required this.onRevealSender,
+  });
+
+  final AnonymousMessageModel report;
+  final bool senderRevealed;
+  final VoidCallback onRevealSender;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.34)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ModuleBadge(
+                label: _reportStatus(report),
+                icon: Icons.pending_actions_rounded,
+                color: colorScheme.tertiary,
+              ),
+              ModuleBadge(
+                label: _formatDateTime(
+                  report.reportCreatedAt ?? report.createdAt,
+                ),
+                icon: Icons.schedule_rounded,
+                color: colorScheme.primary,
+              ),
+            ],
           ),
           const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: colorScheme.surface.withValues(alpha: 0.34),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: colorScheme.outline.withValues(alpha: 0.34),
-              ),
-            ),
-            child: Text(
-              '"The classroom projector is not working properly."',
-              style: textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-                height: 1.35,
-              ),
+          Text(
+            '"${report.message}"',
+            style: textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+              height: 1.35,
             ),
           ),
           const SizedBox(height: 12),
@@ -137,33 +262,108 @@ class _ReportedMessageCard extends StatelessWidget {
             children: [
               _ReportDetailTile(
                 label: 'Reported By',
-                value: 'Mr. Ahmad',
+                value:
+                    report.reportedByTeacherName ??
+                    report.teacherName ??
+                    'Teacher',
                 icon: Icons.co_present_rounded,
                 color: colorScheme.primary,
               ),
               const SizedBox(height: 8),
               _ReportDetailTile(
                 label: 'Subject',
-                value: 'Database Systems',
+                value: report.subjectName ?? 'General Feedback',
                 icon: Icons.storage_rounded,
                 color: colorScheme.secondary,
               ),
               const SizedBox(height: 8),
               _ReportDetailTile(
                 label: 'Reason',
-                value: 'Classroom issue review',
+                value: report.reportReason ?? 'No reason provided',
                 icon: Icons.rule_rounded,
                 color: colorScheme.tertiary,
               ),
               const SizedBox(height: 8),
               _ReportDetailTile(
                 label: 'Identity',
-                value: 'Hidden until admin investigation',
-                icon: Icons.visibility_off_rounded,
-                color: colorScheme.primary,
+                value: senderRevealed
+                    ? _senderSummary(report)
+                    : 'Hidden until admin investigation',
+                icon: senderRevealed
+                    ? Icons.person_search_rounded
+                    : Icons.visibility_off_rounded,
+                color: senderRevealed
+                    ? colorScheme.tertiary
+                    : colorScheme.primary,
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onRevealSender,
+              icon: Icon(
+                senderRevealed
+                    ? Icons.visibility_off_rounded
+                    : Icons.visibility_rounded,
+                size: 18,
+              ),
+              label: Text(senderRevealed ? 'Hide Sender' : 'Reveal Sender'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 44),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
+              ),
+            ),
+          ),
+          if (senderRevealed) ...[
+            const SizedBox(height: 12),
+            _SenderDetailsPanel(report: report),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SenderDetailsPanel extends StatelessWidget {
+  const _SenderDetailsPanel({required this.report});
+
+  final AnonymousMessageModel report;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.tertiary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ModuleInfoTile(
+            title: 'Sender: ${report.studentName ?? 'Student'}',
+            subtitle: 'Roll No: ${report.studentRollNo ?? '--'}',
+            icon: Icons.person_search_rounded,
+            color: colorScheme.tertiary,
+          ),
+          if (_classLabel(report).isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ModuleInfoTile(
+              title: _classLabel(report),
+              subtitle: 'Academic profile',
+              icon: Icons.school_rounded,
+              color: colorScheme.primary,
+            ),
+          ],
         ],
       ),
     );
@@ -230,157 +430,6 @@ class _ReportDetailTile extends StatelessWidget {
   }
 }
 
-class _InvestigationPanel extends StatelessWidget {
-  const _InvestigationPanel({
-    required this.senderRevealed,
-    required this.onRevealSender,
-  });
-
-  final bool senderRevealed;
-  final VoidCallback onRevealSender;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return ModulePanel(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionTitle(
-            title: 'Admin Investigation',
-            icon: Icons.admin_panel_settings_rounded,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    showModuleSnackBar(context, 'Report opened in preview.');
-                  },
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                  label: const Text('Review Report'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 44),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    showModuleSnackBar(
-                      context,
-                      'Report marked safe in preview.',
-                    );
-                  },
-                  icon: const Icon(Icons.verified_rounded, size: 18),
-                  label: const Text('Mark Safe'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 44),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: onRevealSender,
-              icon: const Icon(Icons.visibility_rounded, size: 18),
-              label: const Text('Reveal Sender Preview'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 44),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                showModuleSnackBar(context, 'Report escalated in preview.');
-              },
-              icon: const Icon(Icons.priority_high_rounded, size: 18),
-              label: const Text('Escalate'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 44),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
-                ),
-              ),
-            ),
-          ),
-          if (senderRevealed) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.tertiary.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: colorScheme.tertiary.withValues(alpha: 0.28),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ModuleInfoTile(
-                    title: 'Sender: Ali Khan',
-                    subtitle: 'Roll No: BSIT-2022-001',
-                    icon: Icons.person_search_rounded,
-                    color: colorScheme.tertiary,
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.shield_rounded,
-                        color: colorScheme.tertiary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Identity revealed only for admin investigation preview.',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w700,
-                                height: 1.35,
-                              ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _PrivacyAccountabilityCard extends StatelessWidget {
   const _PrivacyAccountabilityCard();
 
@@ -438,4 +487,81 @@ class _SectionTitle extends StatelessWidget {
       ],
     );
   }
+}
+
+String _reportStatus(AnonymousMessageModel report) {
+  final status = report.reportStatus ?? report.status;
+
+  if (status == 'pending' || status == 'reported') {
+    return 'Pending Review';
+  }
+
+  if (status.trim().isEmpty) {
+    return 'Reported';
+  }
+
+  return '${status[0].toUpperCase()}${status.substring(1)}';
+}
+
+String _senderSummary(AnonymousMessageModel report) {
+  final name = report.studentName ?? 'Student';
+  final rollNo = report.studentRollNo ?? '--';
+
+  return '$name | Roll No: $rollNo';
+}
+
+String _classLabel(AnonymousMessageModel report) {
+  final parts = <String?>[
+    report.departmentName,
+    report.batchName,
+    report.semesterName,
+  ].where(_hasText).map((value) => value!.trim()).toList();
+
+  return parts.join(' | ');
+}
+
+bool _hasText(String? value) {
+  return value != null && value.trim().isNotEmpty;
+}
+
+String _formatDateTime(DateTime value) {
+  final localValue = value.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final messageDate = DateTime(
+    localValue.year,
+    localValue.month,
+    localValue.day,
+  );
+  final time = _formatTime(localValue);
+
+  if (messageDate == today) {
+    return 'Today, $time';
+  }
+
+  if (messageDate == today.subtract(const Duration(days: 1))) {
+    return 'Yesterday, $time';
+  }
+
+  final day = localValue.day.toString().padLeft(2, '0');
+  final month = localValue.month.toString().padLeft(2, '0');
+  final year = localValue.year.toString();
+
+  return '$day/$month/$year, $time';
+}
+
+String _formatTime(DateTime value) {
+  final period = value.hour >= 12 ? 'PM' : 'AM';
+  final displayHour = value.hour == 0
+      ? 12
+      : value.hour > 12
+      ? value.hour - 12
+      : value.hour;
+  final displayMinute = value.minute.toString().padLeft(2, '0');
+
+  return '$displayHour:$displayMinute $period';
+}
+
+String _cleanErrorMessage(Object error) {
+  return error.toString().replaceFirst('Exception: ', '');
 }

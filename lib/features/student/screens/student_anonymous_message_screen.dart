@@ -1,13 +1,13 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
+import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
 import 'package:eduvision_app/core/widgets/primary_button.dart';
+import 'package:eduvision_app/data/models/anonymous_message_model.dart';
+import 'package:eduvision_app/data/models/teacher_model.dart';
+import 'package:eduvision_app/features/auth/providers/auth_controller.dart';
+import 'package:eduvision_app/features/student/providers/student_provider.dart';
 import 'package:flutter/material.dart';
-
-const _teacherOptions = [
-  _TeacherOption(name: 'Mr. Ahmad', subject: 'Database Systems'),
-  _TeacherOption(name: 'Ms. Sara', subject: 'Web Engineering'),
-  _TeacherOption(name: 'Mr. Bilal', subject: 'Artificial Intelligence'),
-];
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const _suggestions = [
   _MessageSuggestion(
@@ -28,21 +28,20 @@ const _suggestions = [
   ),
 ];
 
-class StudentAnonymousMessageScreen extends StatefulWidget {
+class StudentAnonymousMessageScreen extends ConsumerStatefulWidget {
   const StudentAnonymousMessageScreen({super.key});
 
   @override
-  State<StudentAnonymousMessageScreen> createState() =>
+  ConsumerState<StudentAnonymousMessageScreen> createState() =>
       _StudentAnonymousMessageScreenState();
 }
 
 class _StudentAnonymousMessageScreenState
-    extends State<StudentAnonymousMessageScreen> {
+    extends ConsumerState<StudentAnonymousMessageScreen> {
   final _messageController = TextEditingController();
   int _selectedTeacherIndex = 0;
-  bool _submitted = false;
-
-  _TeacherOption get _selectedTeacher => _teacherOptions[_selectedTeacherIndex];
+  bool _isSubmitting = false;
+  TeacherModel? _submittedTeacher;
 
   @override
   void dispose() {
@@ -53,7 +52,7 @@ class _StudentAnonymousMessageScreenState
   void _selectTeacher(int index) {
     setState(() {
       _selectedTeacherIndex = index;
-      _submitted = false;
+      _submittedTeacher = null;
     });
   }
 
@@ -64,42 +63,192 @@ class _StudentAnonymousMessageScreenState
     _messageController.selection = TextSelection.collapsed(
       offset: _messageController.text.length,
     );
-    setState(() => _submitted = false);
+    setState(() => _submittedTeacher = null);
   }
 
-  void _submitMessage() {
-    if (_messageController.text.trim().isEmpty) {
+  Future<void> _submitMessage(List<TeacherModel> teachers) async {
+    if (_isSubmitting) {
+      return;
+    }
+
+    final text = _messageController.text.trim();
+
+    if (text.isEmpty) {
       showModuleSnackBar(context, 'Please write a message first.');
       return;
     }
 
-    setState(() => _submitted = true);
-    showModuleSnackBar(context, 'Anonymous message preview submitted.');
+    if (teachers.isEmpty) {
+      showModuleSnackBar(context, 'No teacher is available right now.');
+      return;
+    }
+
+    final currentUser = ref.read(authControllerProvider).user;
+
+    if (currentUser == null) {
+      showModuleSnackBar(context, 'Please login again before submitting.');
+      return;
+    }
+
+    final selectedTeacher = teachers[_safeSelectedIndex(teachers)];
+
+    setState(() {
+      _isSubmitting = true;
+      _submittedTeacher = null;
+    });
+
+    final result = await ref
+        .read(studentMessageRepositoryProvider)
+        .submitAnonymousMessage(
+          message: AnonymousMessageModel(
+            id: '',
+            studentId: currentUser.id,
+            teacherId: selectedTeacher.id,
+            subjectId: selectedTeacher.subjectId,
+            message: text,
+            status: 'new',
+            isReported: false,
+            createdAt: DateTime.now(),
+          ),
+        );
+
+    if (!mounted) {
+      return;
+    }
+
+    switch (result) {
+      case Success<AnonymousMessageModel>():
+        _messageController.clear();
+        setState(() {
+          _isSubmitting = false;
+          _submittedTeacher = selectedTeacher;
+        });
+        showModuleSnackBar(context, 'Anonymous message submitted.');
+      case Failure<AnonymousMessageModel>(:final exception):
+        setState(() => _isSubmitting = false);
+        showModuleSnackBar(context, exception.message);
+    }
+  }
+
+  int _safeSelectedIndex(List<TeacherModel> teachers) {
+    if (teachers.isEmpty) {
+      return 0;
+    }
+
+    if (_selectedTeacherIndex >= teachers.length) {
+      return 0;
+    }
+
+    return _selectedTeacherIndex;
   }
 
   @override
   Widget build(BuildContext context) {
+    final teachersAsync = ref.watch(studentMessageTeachersProvider);
+
+    final teacherPanels = teachersAsync.when(
+      loading: () => <Widget>[
+        const _TeacherLoadingPanel(),
+        _MessageComposer(
+          controller: _messageController,
+          suggestions: _suggestions,
+          selectedTeacher: null,
+          submittedTeacher: _submittedTeacher,
+          isSubmitting: _isSubmitting,
+          enabled: false,
+          onSuggestionTap: _applySuggestion,
+          onSubmit: () {},
+        ),
+      ],
+      error: (error, _) => <Widget>[
+        _TeacherErrorPanel(message: _cleanErrorMessage(error)),
+        _MessageComposer(
+          controller: _messageController,
+          suggestions: _suggestions,
+          selectedTeacher: null,
+          submittedTeacher: _submittedTeacher,
+          isSubmitting: _isSubmitting,
+          enabled: false,
+          onSuggestionTap: _applySuggestion,
+          onSubmit: () {},
+        ),
+      ],
+      data: (teachers) {
+        final selectedTeacher = teachers.isEmpty
+            ? null
+            : teachers[_safeSelectedIndex(teachers)];
+
+        return <Widget>[
+          _TeacherSelector(
+            teachers: teachers,
+            selectedIndex: _safeSelectedIndex(teachers),
+            onSelected: _selectTeacher,
+          ),
+          _MessageComposer(
+            controller: _messageController,
+            suggestions: _suggestions,
+            selectedTeacher: selectedTeacher,
+            submittedTeacher: _submittedTeacher,
+            isSubmitting: _isSubmitting,
+            enabled: teachers.isNotEmpty,
+            onSuggestionTap: _applySuggestion,
+            onSubmit: () => _submitMessage(teachers),
+          ),
+        ];
+      },
+    );
+
     return ModuleScreenShell(
       title: 'Anonymous Message',
       subtitle: 'Send academic feedback safely.',
       fallbackRoute: AppRoutes.student,
       children: [
         const _PrivacyStatusCard(),
-        _TeacherSelector(
-          teachers: _teacherOptions,
-          selectedIndex: _selectedTeacherIndex,
-          onSelected: _selectTeacher,
-        ),
-        _MessageComposer(
-          controller: _messageController,
-          suggestions: _suggestions,
-          selectedTeacher: _selectedTeacher,
-          submitted: _submitted,
-          onSuggestionTap: _applySuggestion,
-          onSubmit: _submitMessage,
-        ),
+        ...teacherPanels,
         const _PrivacyNoteCard(),
       ],
+    );
+  }
+}
+
+class _TeacherLoadingPanel extends StatelessWidget {
+  const _TeacherLoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Loading teachers',
+        subtitle: 'Fetching available teachers from backend.',
+        icon: Icons.hourglass_top_rounded,
+        color: colorScheme.primary,
+        trailing: ModuleBadge(label: 'Loading', color: colorScheme.primary),
+      ),
+    );
+  }
+}
+
+class _TeacherErrorPanel extends StatelessWidget {
+  const _TeacherErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: ModuleInfoTile(
+        title: 'Unable to load teachers',
+        subtitle: message,
+        icon: Icons.error_outline_rounded,
+        color: colorScheme.error,
+        trailing: ModuleBadge(label: 'Error', color: colorScheme.error),
+      ),
     );
   }
 }
@@ -165,12 +314,14 @@ class _TeacherSelector extends StatelessWidget {
     required this.onSelected,
   });
 
-  final List<_TeacherOption> teachers;
+  final List<TeacherModel> teachers;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return ModulePanel(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -181,14 +332,22 @@ class _TeacherSelector extends StatelessWidget {
             icon: Icons.person_search_rounded,
           ),
           const SizedBox(height: 12),
-          for (var index = 0; index < teachers.length; index++) ...[
-            _TeacherOptionTile(
-              teacher: teachers[index],
-              selected: selectedIndex == index,
-              onTap: () => onSelected(index),
-            ),
-            if (index != teachers.length - 1) const SizedBox(height: 8),
-          ],
+          if (teachers.isEmpty)
+            ModuleInfoTile(
+              title: 'No teachers available',
+              subtitle: 'Teacher assignments will appear here from backend.',
+              icon: Icons.inbox_rounded,
+              color: colorScheme.error,
+            )
+          else
+            for (var index = 0; index < teachers.length; index++) ...[
+              _TeacherOptionTile(
+                teacher: teachers[index],
+                selected: selectedIndex == index,
+                onTap: () => onSelected(index),
+              ),
+              if (index != teachers.length - 1) const SizedBox(height: 8),
+            ],
         ],
       ),
     );
@@ -202,7 +361,7 @@ class _TeacherOptionTile extends StatelessWidget {
     required this.onTap,
   });
 
-  final _TeacherOption teacher;
+  final TeacherModel teacher;
   final bool selected;
   final VoidCallback onTap;
 
@@ -279,7 +438,7 @@ class _TeacherOptionTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      teacher.subject,
+                      _teacherSubtitle(teacher),
                       softWrap: true,
                       style: textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
@@ -313,15 +472,19 @@ class _MessageComposer extends StatelessWidget {
     required this.controller,
     required this.suggestions,
     required this.selectedTeacher,
-    required this.submitted,
+    required this.submittedTeacher,
+    required this.isSubmitting,
+    required this.enabled,
     required this.onSuggestionTap,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
   final List<_MessageSuggestion> suggestions;
-  final _TeacherOption selectedTeacher;
-  final bool submitted;
+  final TeacherModel? selectedTeacher;
+  final TeacherModel? submittedTeacher;
+  final bool isSubmitting;
+  final bool enabled;
   final ValueChanged<String> onSuggestionTap;
   final VoidCallback onSubmit;
 
@@ -342,6 +505,7 @@ class _MessageComposer extends StatelessWidget {
           const SizedBox(height: 12),
           TextField(
             controller: controller,
+            enabled: enabled && !isSubmitting,
             maxLines: 5,
             minLines: 4,
             style: textTheme.bodyMedium?.copyWith(
@@ -369,6 +533,12 @@ class _MessageComposer extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: colorScheme.primary, width: 1.4),
               ),
+              disabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: colorScheme.outline.withValues(alpha: 0.28),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -392,7 +562,9 @@ class _MessageComposer extends StatelessWidget {
                     color: colorScheme.primary,
                   ),
                   label: Text(suggestion.label),
-                  onPressed: () => onSuggestionTap(suggestion.text),
+                  onPressed: enabled && !isSubmitting
+                      ? () => onSuggestionTap(suggestion.text)
+                      : null,
                   labelStyle: textTheme.labelMedium?.copyWith(
                     color: colorScheme.onSurface,
                     fontWeight: FontWeight.w800,
@@ -409,15 +581,29 @@ class _MessageComposer extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           PrimaryButton(
-            label: 'Submit Anonymous Message',
+            label: isSubmitting ? 'Submitting...' : 'Submit Anonymous Message',
             icon: Icons.send_rounded,
             minHeight: 50,
+            isLoading: isSubmitting,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            onPressed: onSubmit,
+            onPressed: enabled && !isSubmitting ? onSubmit : null,
           ),
-          if (submitted) ...[
+          if (submittedTeacher != null) ...[
             const SizedBox(height: 12),
-            _SubmissionPreviewCard(teacher: selectedTeacher),
+            _SubmissionPreviewCard(teacher: submittedTeacher!),
+          ] else if (selectedTeacher != null) ...[
+            const SizedBox(height: 12),
+            ModuleInfoTile(
+              title: 'Selected Teacher',
+              subtitle: _teacherSubtitle(selectedTeacher!),
+              icon: Icons.co_present_rounded,
+              color: colorScheme.primary,
+              trailing: ModuleBadge(
+                label: selectedTeacher!.name,
+                icon: Icons.person_rounded,
+                color: colorScheme.secondary,
+              ),
+            ),
           ],
         ],
       ),
@@ -428,7 +614,7 @@ class _MessageComposer extends StatelessWidget {
 class _SubmissionPreviewCard extends StatelessWidget {
   const _SubmissionPreviewCard({required this.teacher});
 
-  final _TeacherOption teacher;
+  final TeacherModel teacher;
 
   @override
   Widget build(BuildContext context) {
@@ -459,7 +645,7 @@ class _SubmissionPreviewCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               ModuleBadge(
-                label: 'Status: Pending Review',
+                label: 'Status: New',
                 icon: Icons.hourglass_top_rounded,
                 color: colorScheme.tertiary,
               ),
@@ -534,16 +720,30 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _TeacherOption {
-  const _TeacherOption({required this.name, required this.subject});
-
-  final String name;
-  final String subject;
-}
-
 class _MessageSuggestion {
   const _MessageSuggestion({required this.label, required this.text});
 
   final String label;
   final String text;
+}
+
+String _teacherSubtitle(TeacherModel teacher) {
+  final parts = <String?>[
+    teacher.subjectName,
+    teacher.departmentName,
+  ].where(_hasText).map((value) => value!.trim()).toList();
+
+  if (parts.isEmpty) {
+    return 'Available for anonymous feedback';
+  }
+
+  return parts.join(' | ');
+}
+
+bool _hasText(String? value) {
+  return value != null && value.trim().isNotEmpty;
+}
+
+String _cleanErrorMessage(Object error) {
+  return error.toString().replaceFirst('Exception: ', '');
 }
