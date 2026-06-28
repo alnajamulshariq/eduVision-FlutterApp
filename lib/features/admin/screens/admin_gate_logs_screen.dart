@@ -363,7 +363,7 @@ class _ScanResultBox extends StatelessWidget {
                 Text(
                   recordedLog?.parentEmailSent ?? false
                       ? 'Parent email notification sent'
-                      : 'Parent email notification planned',
+                      : 'Parent email notification pending',
                   style: textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w700,
@@ -681,7 +681,7 @@ String _actionLabel(String status) {
 }
 
 String _emailStatus(GateLogModel log) {
-  return log.parentEmailSent ? 'Email Sent' : 'Email Planned';
+  return log.parentEmailSent ? 'Email Sent' : 'Email Pending';
 }
 
 String _formatDate(DateTime value) {

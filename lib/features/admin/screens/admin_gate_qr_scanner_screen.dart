@@ -287,7 +287,7 @@ class _AdminGateQrScannerScreenState
           _StatusPanel(message: _statusMessage!),
         if (_scanResult != null) ...[
           _ScanResultCard(result: _scanResult!),
-          const _ParentEmailNote(),
+          _ParentEmailNote(log: _scanResult!),
         ],
       ],
     );
@@ -781,21 +781,103 @@ class _StatusPanel extends StatelessWidget {
 }
 
 class _ParentEmailNote extends StatelessWidget {
-  const _ParentEmailNote();
+  const _ParentEmailNote({required this.log});
+
+  final GateLogModel log;
 
   @override
   Widget build(BuildContext context) {
-    return const ModulePanel(
-      padding: EdgeInsets.all(14),
+    final status = _parentEmailStatus(log);
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
       child: ModuleInfoTile(
-        title: 'Parent email pending',
-        subtitle:
-            'Parent email notification should be handled later by a secure backend service.',
-        icon: Icons.mark_email_unread_rounded,
-        color: AppColors.amber,
+        title: status.title,
+        subtitle: status.subtitle,
+        icon: status.icon,
+        color: status.color,
       ),
     );
   }
+}
+
+class _ParentEmailStatus {
+  const _ParentEmailStatus({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+}
+
+_ParentEmailStatus _parentEmailStatus(GateLogModel log) {
+  final status = log.parentEmailNotificationStatus?.trim().toLowerCase();
+  final message = log.parentEmailNotificationMessage?.trim();
+
+  if (log.parentEmailSent || status == 'sent') {
+    return const _ParentEmailStatus(
+      title: 'Parent Email: Sent',
+      subtitle: 'Parent was notified through the secure backend service.',
+      icon: Icons.mark_email_read_rounded,
+      color: AppColors.cyan,
+    );
+  }
+
+  if (status == 'provider_not_configured') {
+    return _ParentEmailStatus(
+      title: 'Parent Email: Pending',
+      subtitle: _displayMessage(message, 'Email provider not configured.'),
+      icon: Icons.mark_email_unread_rounded,
+      color: AppColors.amber,
+    );
+  }
+
+  if (status == 'parent_email_missing') {
+    return _ParentEmailStatus(
+      title: 'Parent Email: Parent email not available',
+      subtitle: _displayMessage(
+        message,
+        'No parent email is saved for this student.',
+      ),
+      icon: Icons.contact_mail_rounded,
+      color: AppColors.amber,
+    );
+  }
+
+  if (status == 'failed') {
+    return _ParentEmailStatus(
+      title: 'Parent Email: Failed, Gate Log Saved',
+      subtitle: _displayMessage(
+        message,
+        'The gate log was saved, but the email could not be sent.',
+      ),
+      icon: Icons.mark_email_unread_rounded,
+      color: AppColors.amber,
+    );
+  }
+
+  return _ParentEmailStatus(
+    title: 'Parent Email: Pending',
+    subtitle: _displayMessage(
+      message,
+      'Parent email notification is waiting for backend confirmation.',
+    ),
+    icon: Icons.mark_email_unread_rounded,
+    color: AppColors.amber,
+  );
+}
+
+String _displayMessage(String? message, String fallback) {
+  if (message == null || message.isEmpty) {
+    return fallback;
+  }
+
+  return message;
 }
 
 String _studentName(GateLogModel log) {

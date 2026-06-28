@@ -10,6 +10,8 @@ class GateRepository {
   final SupabaseService? supabaseService;
   final QrTokenService? qrTokenService;
 
+  static const _parentGateEmailFunctionName = 'send-parent-gate-email';
+
   static const _gateLogDetailsSelect = '''
     id,
     student_id,
@@ -74,8 +76,15 @@ class GateRepository {
           .select(_gateLogDetailsSelect)
           .single();
 
+      final savedLog = GateLogModel.fromJson(Map<String, dynamic>.from(row));
+      final emailResult = await _sendParentGateEmailNotification(savedLog);
+
       return Result.success(
-        GateLogModel.fromJson(Map<String, dynamic>.from(row)),
+        savedLog.copyWith(
+          parentEmailSent: emailResult.emailSent || savedLog.parentEmailSent,
+          parentEmailNotificationStatus: emailResult.status,
+          parentEmailNotificationMessage: emailResult.message,
+        ),
       );
     } catch (_) {
       return const Result.failure(
@@ -823,5 +832,117 @@ class GateRepository {
   // ignore: unused_element
   Result<T> _notImplemented<T>(String feature) {
     return Result.failure(AppException.notImplemented(feature));
+  }
+
+  Future<ParentEmailNotificationResult> _sendParentGateEmailNotification(
+    GateLogModel gateLog,
+  ) async {
+    final client = supabaseService?.client;
+
+    if (client == null || gateLog.id.trim().isEmpty) {
+      return const ParentEmailNotificationResult(
+        success: true,
+        emailSent: false,
+        status: 'pending',
+        message: 'Parent email notification is pending.',
+      );
+    }
+
+    try {
+      final response = await client.functions.invoke(
+        _parentGateEmailFunctionName,
+        body: {'gateLogId': gateLog.id, 'studentId': gateLog.studentId},
+      );
+
+      final data = response.data;
+
+      if (data is Map<String, dynamic>) {
+        return ParentEmailNotificationResult.fromJson(data);
+      }
+
+      if (data is Map) {
+        return ParentEmailNotificationResult.fromJson(
+          Map<String, dynamic>.from(data),
+        );
+      }
+
+      return const ParentEmailNotificationResult(
+        success: false,
+        emailSent: false,
+        status: 'failed',
+        message: 'Parent email status could not be confirmed.',
+      );
+    } catch (_) {
+      return const ParentEmailNotificationResult(
+        success: false,
+        emailSent: false,
+        status: 'failed',
+        message: 'Parent email failed, but the gate log was saved.',
+      );
+    }
+  }
+}
+
+class ParentEmailNotificationResult {
+  const ParentEmailNotificationResult({
+    required this.success,
+    required this.emailSent,
+    required this.status,
+    required this.message,
+  });
+
+  final bool success;
+  final bool emailSent;
+  final String status;
+  final String message;
+
+  factory ParentEmailNotificationResult.fromJson(Map<String, dynamic> json) {
+    final emailSent = json['emailSent'] == true || json['email_sent'] == true;
+    final message = _readText(json['message']) ?? _fallbackMessage(emailSent);
+
+    return ParentEmailNotificationResult(
+      success: json['success'] == true,
+      emailSent: emailSent,
+      status: _readText(json['status']) ?? _statusFromMessage(message),
+      message: message,
+    );
+  }
+
+  static String _fallbackMessage(bool emailSent) {
+    return emailSent
+        ? 'Parent email notification sent.'
+        : 'Parent email notification is pending.';
+  }
+
+  static String _statusFromMessage(String message) {
+    final normalized = message.toLowerCase();
+
+    if (normalized.contains('sent')) {
+      return 'sent';
+    }
+
+    if (normalized.contains('not configured')) {
+      return 'provider_not_configured';
+    }
+
+    if (normalized.contains('not available')) {
+      return 'parent_email_missing';
+    }
+
+    if (normalized.contains('failed')) {
+      return 'failed';
+    }
+
+    return 'pending';
+  }
+
+  static String? _readText(dynamic value) {
+    final text = value?.toString().trim();
+
+    if (text == null || text.isEmpty) {
+      return null;
+    }
+
+    return text;
   }
 }

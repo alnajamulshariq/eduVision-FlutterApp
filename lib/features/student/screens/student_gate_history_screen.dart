@@ -269,7 +269,7 @@ class _ParentNotificationCard extends StatelessWidget {
             title: 'Parent Alert',
             subtitle: sent
                 ? 'Email notification was marked as sent.'
-                : 'Parent email notification is planned for this flow.',
+                : 'Parent email notification is pending for this gate event.',
             icon: sent
                 ? Icons.mark_email_read_rounded
                 : Icons.pending_actions_rounded,
@@ -308,7 +308,7 @@ class _ParentNotificationCard extends StatelessWidget {
                 ModuleBadge(
                   label: sent
                       ? 'Notification Status: Sent'
-                      : 'Notification Status: Planned',
+                      : 'Notification Status: Pending',
                   icon: sent
                       ? Icons.mark_email_read_rounded
                       : Icons.pending_actions_rounded,
@@ -471,7 +471,7 @@ String _actionLabel(String status) {
 }
 
 String _emailStatus(GateLogModel log) {
-  return log.parentEmailSent ? 'Parent Email Sent' : 'Email Planned';
+  return log.parentEmailSent ? 'Parent Email Sent' : 'Email Pending';
 }
 
 IconData _statusIcon(GateLogModel? log) {

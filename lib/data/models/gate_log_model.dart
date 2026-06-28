@@ -13,6 +13,8 @@ class GateLogModel {
     this.departmentName,
     this.batchName,
     this.semesterName,
+    this.parentEmailNotificationStatus,
+    this.parentEmailNotificationMessage,
   });
 
   final String id;
@@ -30,6 +32,8 @@ class GateLogModel {
   final String? departmentName;
   final String? batchName;
   final String? semesterName;
+  final String? parentEmailNotificationStatus;
+  final String? parentEmailNotificationMessage;
 
   factory GateLogModel.fromJson(Map<String, dynamic> json) {
     final student = _mapOrNull(json['students']);
@@ -77,6 +81,8 @@ class GateLogModel {
     String? departmentName,
     String? batchName,
     String? semesterName,
+    String? parentEmailNotificationStatus,
+    String? parentEmailNotificationMessage,
   }) {
     return GateLogModel(
       id: id ?? this.id,
@@ -92,6 +98,10 @@ class GateLogModel {
       departmentName: departmentName ?? this.departmentName,
       batchName: batchName ?? this.batchName,
       semesterName: semesterName ?? this.semesterName,
+      parentEmailNotificationStatus:
+          parentEmailNotificationStatus ?? this.parentEmailNotificationStatus,
+      parentEmailNotificationMessage:
+          parentEmailNotificationMessage ?? this.parentEmailNotificationMessage,
     );
   }
 
