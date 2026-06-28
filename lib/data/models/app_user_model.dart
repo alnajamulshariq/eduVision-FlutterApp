@@ -19,6 +19,8 @@ class AppUserModel {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  bool get mustChangePassword => isFirstLogin && !passwordChangedOnce;
+
   factory AppUserModel.fromJson(Map<String, dynamic> json) {
     return AppUserModel(
       id: json['id'] as String,

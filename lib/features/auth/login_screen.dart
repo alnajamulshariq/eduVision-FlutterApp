@@ -40,7 +40,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     if (!mounted || user == null) return;
 
-    context.go(AppRoutes.dashboardForRole(user.role));
+    context.go(
+      user.mustChangePassword
+          ? AppRoutes.changePassword
+          : AppRoutes.dashboardForRole(user.role),
+    );
   }
 
   void _fillDemoCredential(_DemoCredential credential) {
@@ -531,6 +535,7 @@ class _CompactDemoAccessPanel extends StatelessWidget {
     );
   }
 }
+
 class _DemoQuickButton extends StatelessWidget {
   const _DemoQuickButton({
     required this.credential,
@@ -564,10 +569,7 @@ class _DemoQuickButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              credential.icon,
-              size: metrics.isCompactHeight ? 13 : 15,
-            ),
+            Icon(credential.icon, size: metrics.isCompactHeight ? 13 : 15),
             const SizedBox(width: 5),
             Text(
               'Use ${credential.role}',
@@ -583,6 +585,7 @@ class _DemoQuickButton extends StatelessWidget {
     );
   }
 }
+
 class _InsightTile extends StatelessWidget {
   const _InsightTile({
     required this.label,

@@ -39,6 +39,7 @@ User management:
 - Create teacher account and profile
 - Create admin account
 - Reset a user's temporary password
+- Mark created and reset users for first-login password change
 
 Academic management:
 
@@ -73,6 +74,26 @@ Each function:
 9. Assign a teacher and enroll a student.
 10. Confirm lists refresh and the created records appear.
 11. Confirm the created user can log in with the known temporary password.
+12. Confirm the created user is routed to Change Password before dashboard.
+13. Confirm the user can set a new password once, then reaches dashboard.
+14. Reset the user password as Admin and confirm the first-login flow is required again.
+
+## First-Login Password Flow
+
+Admin-created accounts and admin password resets set:
+
+- `app_users.is_first_login = true`
+- `app_users.password_changed_once = false`
+
+After the user signs in with the temporary password, Flutter routes them to
+`/change-password`. The user can set a new password once through Supabase Auth,
+then Flutter updates the profile flags to:
+
+- `app_users.is_first_login = false`
+- `app_users.password_changed_once = true`
+
+The app router keeps first-login users away from role dashboards until these
+flags are finalized. Forgotten passwords remain admin-reset only.
 
 ## Current Limitations
 

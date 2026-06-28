@@ -41,7 +41,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     final authState = ref.read(authControllerProvider);
     final user = authState.user;
     final route = authState.isAuthenticated && user != null
-        ? AppRoutes.dashboardForRole(user.role)
+        ? user.mustChangePassword
+              ? AppRoutes.changePassword
+              : AppRoutes.dashboardForRole(user.role)
         : AppRoutes.login;
 
     context.go(route);

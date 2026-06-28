@@ -6,6 +6,7 @@ import 'package:eduvision_app/features/admin/screens/admin_gate_logs_screen.dart
 import 'package:eduvision_app/features/admin/screens/admin_gate_qr_scanner_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_message_reports_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_users_screen.dart';
+import 'package:eduvision_app/features/auth/change_password_screen.dart';
 import 'package:eduvision_app/features/auth/login_screen.dart';
 import 'package:eduvision_app/features/auth/providers/auth_controller.dart';
 import 'package:eduvision_app/features/splash/splash_screen.dart';
@@ -31,14 +32,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final authState = ref.read(authControllerProvider);
       final path = state.uri.path;
       final isPublicRoute = path == AppRoutes.splash || path == AppRoutes.login;
+      final isChangePasswordRoute = path == AppRoutes.changePassword;
 
       if (!isPublicRoute && !authState.isAuthenticated) {
         return AppRoutes.login;
       }
 
-      if (path == AppRoutes.login && authState.isAuthenticated) {
-        final user = authState.user;
-        if (user != null) {
+      final user = authState.user;
+      if (authState.isAuthenticated && user != null) {
+        if (user.mustChangePassword && !isChangePasswordRoute) {
+          return AppRoutes.changePassword;
+        }
+
+        if (!user.mustChangePassword && isChangePasswordRoute) {
+          return AppRoutes.dashboardForRole(user.role);
+        }
+
+        if (path == AppRoutes.login) {
           return AppRoutes.dashboardForRole(user.role);
         }
       }
@@ -55,6 +65,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.login,
         name: 'login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.changePassword,
+        name: 'change-password',
+        builder: (context, state) => const ChangePasswordScreen(),
       ),
       GoRoute(
         path: AppRoutes.student,

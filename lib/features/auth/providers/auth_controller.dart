@@ -78,24 +78,40 @@ class AuthController extends Notifier<AuthState> {
       return false;
     }
 
+    if (!currentUser.mustChangePassword) {
+      state = state.copyWith(
+        isLoading: false,
+        user: currentUser,
+        errorMessage: 'This password change has already been completed.',
+        isAuthenticated: true,
+      );
+      return false;
+    }
+
+    state = AuthState.loading(user: currentUser);
+
     final result = await ref
         .read(authRepositoryProvider)
-        .changePasswordOnce(
-          userId: currentUser.id,
-          currentPassword: '',
-          newPassword: newPassword,
-        );
+        .changePasswordOnce(userId: currentUser.id, newPassword: newPassword);
 
     if (result is Success<void>) {
-      // TODO: Route first-login users to a dedicated password change screen.
       state = AuthState.authenticated(
-        currentUser.copyWith(isFirstLogin: false, passwordChangedOnce: true),
+        currentUser.copyWith(
+          isFirstLogin: false,
+          passwordChangedOnce: true,
+          updatedAt: DateTime.now().toUtc(),
+        ),
       );
       return true;
     }
 
     if (result case Failure<void>(:final exception)) {
-      state = AuthState.error(exception.message);
+      state = state.copyWith(
+        isLoading: false,
+        user: currentUser,
+        errorMessage: exception.message,
+        isAuthenticated: true,
+      );
     }
 
     return false;

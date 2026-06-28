@@ -11,6 +11,7 @@ class AuthRepository {
   static const _mockUserEmailKey = 'eduvision_mock_auth_email';
   static const _mockPasswordChangedKeyPrefix =
       'eduvision_mock_password_changed_';
+  static const _mockPasswordKeyPrefix = 'eduvision_mock_password_';
 
   final SupabaseService? supabaseService;
   final SharedPreferences? preferences;
@@ -155,7 +156,6 @@ class AuthRepository {
 
   Future<Result<void>> changePasswordOnce({
     required String userId,
-    required String currentPassword,
     required String newPassword,
   }) async {
     if (_shouldUseMockAuth) {
@@ -168,7 +168,23 @@ class AuthRepository {
         );
       }
 
+      final passwordChanged =
+          preferences?.getBool(_passwordChangedKey(userId)) ?? false;
+
+      if (passwordChanged) {
+        return const Result.failure(
+          AppException(
+            message: 'This password change has already been completed.',
+            code: 'mock_password_change_already_completed',
+          ),
+        );
+      }
+
       await preferences?.setBool(_passwordChangedKey(userId), true);
+      await preferences?.setString(
+        _mockPasswordKey(userId),
+        newPassword.trim(),
+      );
       return const Result.success(null);
     }
 
@@ -194,14 +210,48 @@ class AuthRepository {
         );
       }
 
+      final profile = await client
+          .from('app_users')
+          .select('is_first_login, password_changed_once')
+          .eq('id', userId)
+          .eq('is_active', true)
+          .maybeSingle();
+
+      final isFirstLogin = profile?['is_first_login'] as bool? ?? false;
+      final passwordChangedOnce =
+          profile?['password_changed_once'] as bool? ?? true;
+
+      if (!isFirstLogin || passwordChangedOnce) {
+        return const Result.failure(
+          AppException(
+            message: 'This password change has already been completed.',
+            code: 'password_change_already_completed',
+          ),
+        );
+      }
+
       await client.auth.updateUser(
         UserAttributes(password: newPassword.trim()),
       );
 
-      await client
+      final updatedProfile = await client
           .from('app_users')
           .update({'is_first_login': false, 'password_changed_once': true})
-          .eq('id', userId);
+          .eq('id', userId)
+          .eq('is_first_login', true)
+          .eq('password_changed_once', false)
+          .select('id')
+          .maybeSingle();
+
+      if (updatedProfile == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Password was updated, but profile state could not be finalized. Please contact admin.',
+            code: 'password_profile_finalize_failed',
+          ),
+        );
+      }
 
       return const Result.success(null);
     } catch (_) {
@@ -219,6 +269,10 @@ class AuthRepository {
     required String temporaryPassword,
   }) async {
     if (_shouldUseMockAuth) {
+      await preferences?.setString(
+        _mockPasswordKey(userId),
+        temporaryPassword.trim(),
+      );
       await preferences?.remove(_passwordChangedKey(userId));
       return const Result.success(null);
     }
@@ -267,13 +321,17 @@ class AuthRepository {
 
   AppUserModel? _findMockUser(String universityEmail, String password) {
     final normalizedEmail = universityEmail.trim().toLowerCase();
-    final expectedPassword = _mockPasswords[normalizedEmail];
+    final user = _mockUsers[normalizedEmail];
+    final expectedPassword = user == null
+        ? null
+        : preferences?.getString(_mockPasswordKey(user.id)) ??
+              _mockPasswords[normalizedEmail];
 
     if (expectedPassword == null || expectedPassword != password) {
       return null;
     }
 
-    return _mockUsers[normalizedEmail];
+    return user;
   }
 
   AppUserModel _withMockPasswordState(AppUserModel user) {
@@ -289,6 +347,10 @@ class AuthRepository {
 
   static String _passwordChangedKey(String userId) {
     return '$_mockPasswordChangedKeyPrefix$userId';
+  }
+
+  static String _mockPasswordKey(String userId) {
+    return '$_mockPasswordKeyPrefix$userId';
   }
 
   static final Map<String, String> _mockPasswords = {

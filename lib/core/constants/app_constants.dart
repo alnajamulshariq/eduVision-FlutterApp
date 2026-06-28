@@ -23,6 +23,7 @@ abstract final class AppConstants {
 abstract final class AppRoutes {
   static const splash = '/splash';
   static const login = '/login';
+  static const changePassword = '/change-password';
   static const student = '/student';
   static const studentQr = '/student/qr';
   static const studentAttendance = '/student/attendance';
