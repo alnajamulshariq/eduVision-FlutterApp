@@ -7,11 +7,48 @@ import 'package:eduvision_app/core/utils/result.dart';
 class QrTokenService {
   const QrTokenService();
 
-  static const payloadType = 'attendance_qr';
+  static const attendancePayloadType = 'attendance_qr';
+  static const gatePayloadType = 'gate_qr';
+  static const payloadType = attendancePayloadType;
   static const defaultTtlSeconds = 120;
   static const defaultTtl = Duration(seconds: defaultTtlSeconds);
+  static const _safePayloadKeys = {
+    'type',
+    'studentUserId',
+    'studentId',
+    'issuedAt',
+    'expiresAt',
+    'nonce',
+  };
 
   Future<Result<String>> generateStudentToken({
+    String? studentUserId,
+    String? studentId,
+    Duration ttl = defaultTtl,
+  }) async {
+    return _generateStudentToken(
+      type: attendancePayloadType,
+      studentUserId: studentUserId,
+      studentId: studentId,
+      ttl: ttl,
+    );
+  }
+
+  Future<Result<String>> generateStudentGateToken({
+    String? studentUserId,
+    String? studentId,
+    Duration ttl = defaultTtl,
+  }) async {
+    return _generateStudentToken(
+      type: gatePayloadType,
+      studentUserId: studentUserId,
+      studentId: studentId,
+      ttl: ttl,
+    );
+  }
+
+  Future<Result<String>> _generateStudentToken({
+    required String type,
     String? studentUserId,
     String? studentId,
     Duration ttl = defaultTtl,
@@ -31,7 +68,7 @@ class QrTokenService {
     final issuedAt = DateTime.now().toUtc();
     final expiresAt = issuedAt.add(ttl);
     final payload = <String, dynamic>{
-      'type': payloadType,
+      'type': type,
       if (normalizedUserId != null) 'studentUserId': normalizedUserId,
       if (normalizedStudentId != null) 'studentId': normalizedStudentId,
       'issuedAt': issuedAt.toIso8601String(),
@@ -122,6 +159,96 @@ class QrTokenService {
     }
   }
 
+  Result<DynamicQrPayload> parseGatePayload({
+    required String payload,
+    DateTime? now,
+  }) {
+    final rawPayload = payload.trim();
+
+    if (rawPayload.isEmpty) {
+      return const Result.failure(
+        AppException(
+          message: 'This QR code is empty. Please scan a valid gate QR.',
+          code: 'invalid_gate_qr_payload',
+        ),
+      );
+    }
+
+    try {
+      final decoded = jsonDecode(rawPayload);
+
+      if (decoded is! Map) {
+        return _invalidGatePayload();
+      }
+
+      final json = Map<String, dynamic>.from(decoded);
+
+      if (json.keys.any((key) => !_safePayloadKeys.contains(key))) {
+        return _invalidGatePayload();
+      }
+
+      final type = json['type'] as String?;
+
+      if (type != gatePayloadType) {
+        return const Result.failure(
+          AppException(
+            message: 'This QR is not a valid EduVision gate access QR.',
+            code: 'wrong_gate_qr_type',
+          ),
+        );
+      }
+
+      final studentUserId = _normalizedOrNull(json['studentUserId'] as String?);
+      final studentId = _normalizedOrNull(json['studentId'] as String?);
+
+      if (studentUserId == null && studentId == null) {
+        return const Result.failure(
+          AppException(
+            message: 'This gate QR does not contain a student identity.',
+            code: 'gate_qr_student_id_missing',
+          ),
+        );
+      }
+
+      final issuedAt = _parseDate(json['issuedAt']);
+      final expiresAt = _parseDate(json['expiresAt']);
+
+      if (issuedAt == null || expiresAt == null) {
+        return _invalidGatePayload();
+      }
+
+      final currentTime = (now ?? DateTime.now()).toUtc();
+
+      if (!expiresAt.isAfter(currentTime)) {
+        return const Result.failure(
+          AppException(
+            message:
+                'This gate QR has expired. Ask the student to show the latest Gate Access QR.',
+            code: 'gate_qr_expired',
+          ),
+        );
+      }
+
+      final nonce = _normalizedOrNull(json['nonce'] as String?);
+
+      if (nonce == null) {
+        return _invalidGatePayload();
+      }
+
+      return Result.success(
+        DynamicQrPayload(
+          studentUserId: studentUserId,
+          studentId: studentId,
+          issuedAt: issuedAt,
+          expiresAt: expiresAt,
+          nonce: nonce,
+        ),
+      );
+    } catch (_) {
+      return _invalidGatePayload();
+    }
+  }
+
   Future<Result<bool>> verifyStudentToken({required String token}) async {
     final result = parseAttendancePayload(payload: token);
 
@@ -154,6 +281,15 @@ class QrTokenService {
       AppException(
         message: 'This is not a valid EduVision attendance QR.',
         code: 'invalid_qr_payload',
+      ),
+    );
+  }
+
+  Result<DynamicQrPayload> _invalidGatePayload() {
+    return const Result.failure(
+      AppException(
+        message: 'This is not a valid EduVision gate access QR.',
+        code: 'invalid_gate_qr_payload',
       ),
     );
   }

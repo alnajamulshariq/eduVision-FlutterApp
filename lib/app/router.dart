@@ -3,6 +3,7 @@ import 'package:eduvision_app/features/admin/admin_dashboard_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_academics_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_attendance_reports_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_gate_logs_screen.dart';
+import 'package:eduvision_app/features/admin/screens/admin_gate_qr_scanner_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_message_reports_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_users_screen.dart';
 import 'package:eduvision_app/features/auth/login_screen.dart';
@@ -139,6 +140,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.adminGateLogs,
         name: 'admin-gate-logs',
         builder: (context, state) => const AdminGateLogsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminGateQrScanner,
+        name: 'admin-gate-qr-scanner',
+        builder: (context, state) => const AdminGateQrScannerScreen(),
       ),
       GoRoute(
         path: AppRoutes.adminMessageReports,

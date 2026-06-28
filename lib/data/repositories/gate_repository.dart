@@ -156,6 +156,25 @@ class GateRepository {
     }
   }
 
+  Future<Result<GateLogModel>> createNextGateLogFromQrPayload({
+    required String payload,
+    String gateLocation = 'Main Gate',
+  }) async {
+    final tokenResult = (qrTokenService ?? const QrTokenService())
+        .parseGatePayload(payload: payload);
+
+    if (tokenResult case Failure<DynamicQrPayload>(:final exception)) {
+      return Result.failure(exception);
+    }
+
+    final token = (tokenResult as Success<DynamicQrPayload>).data;
+
+    return createNextGateLogForStudent(
+      studentId: token.lookupId,
+      gateLocation: gateLocation,
+    );
+  }
+
   Future<Result<GateLogModel>> createNextGateLogForFirstActiveStudent({
     String gateLocation = 'Main Gate',
   }) async {

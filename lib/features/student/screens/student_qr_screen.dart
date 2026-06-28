@@ -20,11 +20,31 @@ class StudentQrScreen extends ConsumerStatefulWidget {
   ConsumerState<StudentQrScreen> createState() => _StudentQrScreenState();
 }
 
+enum _StudentQrMode { attendance, gate }
+
+extension _StudentQrModeLabels on _StudentQrMode {
+  String get title {
+    return switch (this) {
+      _StudentQrMode.attendance => 'Attendance QR',
+      _StudentQrMode.gate => 'Gate Access QR',
+    };
+  }
+
+  String get copyMessage {
+    return switch (this) {
+      _StudentQrMode.attendance =>
+        'Attendance QR payload copied for emulator testing.',
+      _StudentQrMode.gate => 'Gate QR payload copied for emulator testing.',
+    };
+  }
+}
+
 class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
   Timer? _countdownTimer;
   StudentQrIdentityModel? _activeIdentity;
+  _StudentQrMode _qrMode = _StudentQrMode.attendance;
   String? _qrPayload;
   String? _qrError;
   bool _isGenerating = false;
@@ -75,18 +95,23 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
       _qrError = null;
     });
 
-    final result = await ref
-        .read(qrTokenServiceProvider)
-        .generateStudentToken(
-          studentUserId: identity.studentUserId,
-          studentId: identity.studentId,
-        );
+    final tokenService = ref.read(qrTokenServiceProvider);
+    final tokenResult = switch (_qrMode) {
+      _StudentQrMode.attendance => await tokenService.generateStudentToken(
+        studentUserId: identity.studentUserId,
+        studentId: identity.studentId,
+      ),
+      _StudentQrMode.gate => await tokenService.generateStudentGateToken(
+        studentUserId: identity.studentUserId,
+        studentId: identity.studentId,
+      ),
+    };
 
     if (!mounted) {
       return;
     }
 
-    if (result case Success<String>(:final data)) {
+    if (tokenResult case Success<String>(:final data)) {
       setState(() {
         _qrPayload = data;
         _secondsRemaining = QrTokenService.defaultTtlSeconds;
@@ -95,7 +120,7 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
       return;
     }
 
-    if (result case Failure<String>(:final exception)) {
+    if (tokenResult case Failure<String>(:final exception)) {
       setState(() {
         _qrError = exception.message;
         _isGenerating = false;
@@ -117,7 +142,26 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
       return;
     }
 
-    showModuleSnackBar(context, 'QR payload copied for emulator testing.');
+    showModuleSnackBar(context, _qrMode.copyMessage);
+  }
+
+  void _changeMode(_StudentQrMode mode) {
+    if (_qrMode == mode) {
+      return;
+    }
+
+    setState(() {
+      _qrMode = mode;
+      _qrPayload = null;
+      _qrError = null;
+      _secondsRemaining = QrTokenService.defaultTtlSeconds;
+    });
+
+    final identity = _activeIdentity;
+
+    if (identity != null) {
+      unawaited(_regeneratePayload(identity));
+    }
   }
 
   @override
@@ -162,6 +206,7 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
                 children: [
                   _DynamicQrIdentityCard(
                     identity: identity,
+                    qrMode: _qrMode,
                     pulseAnimation: _pulseController,
                     secondsRemaining: _secondsRemaining,
                     payload: _qrPayload,
@@ -169,6 +214,7 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
                     isGenerating: _isGenerating,
                     onRefresh: () => _regeneratePayload(identity),
                     onCopyPayload: () => unawaited(_copyCurrentPayload()),
+                    onModeChanged: _changeMode,
                   ),
                   const SizedBox(height: 14),
                   const Wrap(
@@ -219,6 +265,7 @@ class _StudentQrScreenState extends ConsumerState<StudentQrScreen>
 class _DynamicQrIdentityCard extends StatelessWidget {
   const _DynamicQrIdentityCard({
     required this.identity,
+    required this.qrMode,
     required this.pulseAnimation,
     required this.secondsRemaining,
     required this.payload,
@@ -226,9 +273,11 @@ class _DynamicQrIdentityCard extends StatelessWidget {
     required this.isGenerating,
     required this.onRefresh,
     required this.onCopyPayload,
+    required this.onModeChanged,
   });
 
   final StudentQrIdentityModel identity;
+  final _StudentQrMode qrMode;
   final Animation<double> pulseAnimation;
   final int secondsRemaining;
   final String? payload;
@@ -236,6 +285,7 @@ class _DynamicQrIdentityCard extends StatelessWidget {
   final bool isGenerating;
   final VoidCallback onRefresh;
   final VoidCallback onCopyPayload;
+  final ValueChanged<_StudentQrMode> onModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -316,6 +366,29 @@ class _DynamicQrIdentityCard extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<_StudentQrMode>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: _StudentQrMode.attendance,
+                      icon: Icon(Icons.fact_check_rounded, size: 18),
+                      label: Text('Attendance'),
+                    ),
+                    ButtonSegment(
+                      value: _StudentQrMode.gate,
+                      icon: Icon(Icons.sensor_door_rounded, size: 18),
+                      label: Text('Gate Access'),
+                    ),
+                  ],
+                  selected: {qrMode},
+                  onSelectionChanged: isGenerating
+                      ? null
+                      : (selection) => onModeChanged(selection.first),
+                ),
+              ),
               const SizedBox(height: 14),
               Center(
                 child: Container(
@@ -371,8 +444,8 @@ class _DynamicQrIdentityCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       isGenerating
-                          ? 'Refreshing QR...'
-                          : 'Refreshes in ${secondsRemaining}s',
+                          ? 'Refreshing ${qrMode.title}...'
+                          : '${qrMode.title} refreshes in ${secondsRemaining}s',
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                         color: colorScheme.primary,

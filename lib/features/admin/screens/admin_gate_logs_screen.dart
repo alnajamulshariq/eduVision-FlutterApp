@@ -6,6 +6,7 @@ import 'package:eduvision_app/data/models/gate_log_model.dart';
 import 'package:eduvision_app/features/admin/providers/admin_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 class AdminGateLogsScreen extends ConsumerStatefulWidget {
   const AdminGateLogsScreen({super.key});
@@ -85,6 +86,9 @@ class _AdminGateLogsScreenState extends ConsumerState<AdminGateLogsScreen> {
           recordedLog: _recordedLog,
           onSimulate: _simulateGateScan,
           onReset: _resetPreview,
+        ),
+        _GateQrScannerLinkCard(
+          onOpenScanner: () => context.push(AppRoutes.adminGateQrScanner),
         ),
         const _FilterChipsCard(),
         gateLogsAsync.when(
@@ -373,6 +377,44 @@ class _ScanResultBox extends StatelessWidget {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _GateQrScannerLinkCard extends StatelessWidget {
+  const _GateQrScannerLinkCard({required this.onOpenScanner});
+
+  final VoidCallback onOpenScanner;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(
+            title: 'Dynamic QR Gate Access',
+            icon: Icons.qr_code_scanner_rounded,
+          ),
+          const SizedBox(height: 12),
+          ModuleInfoTile(
+            title: 'Scan student Gate Access QR',
+            subtitle: 'Creates the next entry or exit row in gate logs.',
+            icon: Icons.sensor_door_rounded,
+            color: colorScheme.primary,
+          ),
+          const SizedBox(height: 12),
+          PrimaryButton(
+            label: 'Open Gate QR Scanner',
+            icon: Icons.qr_code_scanner_rounded,
+            minHeight: 48,
+            onPressed: onOpenScanner,
+          ),
+        ],
+      ),
     );
   }
 }

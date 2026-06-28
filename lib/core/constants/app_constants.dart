@@ -40,6 +40,7 @@ abstract final class AppRoutes {
   static const adminAcademics = '/admin/academics';
   static const adminAttendanceReports = '/admin/attendance-reports';
   static const adminGateLogs = '/admin/gate-logs';
+  static const adminGateQrScanner = '/admin/gate-qr-scanner';
   static const adminMessageReports = '/admin/message-reports';
 
   static String dashboardForRole(String role) {
