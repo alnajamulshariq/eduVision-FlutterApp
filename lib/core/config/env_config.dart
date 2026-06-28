@@ -10,6 +10,7 @@ abstract final class EnvConfig {
   static const _compileTimeUseMockData = String.fromEnvironment(
     'USE_MOCK_DATA',
   );
+  static const _compileTimeFaceApiUrl = String.fromEnvironment('FACE_API_URL');
   static const _compileTimeFaceApiBaseUrl = String.fromEnvironment(
     'FACE_API_BASE_URL',
   );
@@ -47,6 +48,15 @@ abstract final class EnvConfig {
   }
 
   static String get faceApiBaseUrl {
+    final faceApiUrl = _readValue(
+      'FACE_API_URL',
+      compileTimeValue: _compileTimeFaceApiUrl,
+    );
+
+    if (faceApiUrl.isNotEmpty) {
+      return faceApiUrl;
+    }
+
     return _readValue(
       'FACE_API_BASE_URL',
       compileTimeValue: _compileTimeFaceApiBaseUrl,

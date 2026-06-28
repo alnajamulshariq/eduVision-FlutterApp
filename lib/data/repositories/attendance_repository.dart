@@ -4,6 +4,7 @@ import 'package:eduvision_app/data/models/attendance_record_model.dart';
 import 'package:eduvision_app/data/models/attendance_report_model.dart';
 import 'package:eduvision_app/data/models/attendance_session_model.dart';
 import 'package:eduvision_app/data/models/dynamic_qr_model.dart';
+import 'package:eduvision_app/data/models/face_recognition_result_model.dart';
 import 'package:eduvision_app/data/models/timetable_model.dart';
 import 'package:eduvision_app/data/services/face_api_service.dart';
 import 'package:eduvision_app/data/services/qr_token_service.dart';
@@ -311,11 +312,21 @@ class AttendanceRepository {
     }
   }
 
-  Future<Result<void>> saveDemoAttendanceRecordForSession({
+  Future<Result<FaceRecognitionSessionResultModel>>
+  runFaceRecognitionAttendanceForSession({
     required AttendanceSessionModel session,
+    int totalFrames = 20,
   }) async {
+    final resolvedTotalFrames = totalFrames <= 0 ? 20 : totalFrames;
+
     if (_shouldUseMockData) {
-      return const Result.success(null);
+      return Result.success(
+        _buildFaceRecognitionFallback(
+          enrolledStudents: _mockFaceRecognitionCandidates(),
+          totalFrames: resolvedTotalFrames,
+          message: 'Face Recognition demo fallback used.',
+        ),
+      );
     }
 
     try {
@@ -331,45 +342,101 @@ class AttendanceRepository {
         );
       }
 
-      final enrolledStudent = await client
-          .from('student_subjects')
-          .select('student_id')
-          .eq('subject_id', session.subjectId)
-          .limit(1)
-          .maybeSingle();
+      final enrolledStudents = await _loadEnrolledStudentsForSession(session);
 
-      final studentId = enrolledStudent?['student_id'] as String?;
-
-      if (studentId == null || studentId.trim().isEmpty) {
+      if (enrolledStudents.isEmpty) {
         return const Result.failure(
           AppException(
-            message: 'No enrolled student found for this active class.',
-            code: 'attendance_record_student_not_found',
+            message: 'No enrolled students found for this active class.',
+            code: 'face_attendance_students_not_found',
           ),
         );
       }
 
-      final record = AttendanceRecordModel(
-        id: '',
-        sessionId: session.id,
-        studentId: studentId,
-        attendancePercentage: 90,
-        attendanceMethod: 'face_recognition',
-        attendanceStatus: 'present',
-        framesDetected: 18,
-        totalFrames: 20,
-        createdAt: DateTime.now(),
-      );
+      FaceRecognitionSessionResultModel sessionResult;
+      final service = faceApiService;
 
-      return saveAttendanceRecord(record: record);
+      if (service != null && service.isConfigured) {
+        final apiResult = await service.processAttendanceSession(
+          sessionId: session.id,
+          subjectId: session.subjectId,
+          teacherId: session.teacherId,
+          enrolledStudentIds: enrolledStudents
+              .map((student) => student.studentId)
+              .toList(),
+          totalFrames: resolvedTotalFrames,
+        );
+
+        if (apiResult case Success<FaceRecognitionSessionResultModel>(
+          :final data,
+        )) {
+          sessionResult = _mergeFaceRecognitionResults(
+            apiResult: data,
+            enrolledStudents: enrolledStudents,
+            totalFrames: resolvedTotalFrames,
+          );
+        } else {
+          sessionResult = _buildFaceRecognitionFallback(
+            enrolledStudents: enrolledStudents,
+            totalFrames: resolvedTotalFrames,
+            message:
+                'Face Recognition demo fallback used because the Python API is unavailable.',
+          );
+        }
+      } else {
+        sessionResult = _buildFaceRecognitionFallback(
+          enrolledStudents: enrolledStudents,
+          totalFrames: resolvedTotalFrames,
+          message:
+              'Face Recognition demo fallback used. Configure FACE_API_URL or FACE_API_BASE_URL to call the Python API.',
+        );
+      }
+
+      for (final result in sessionResult.results) {
+        final saveResult = await saveAttendanceRecord(
+          record: AttendanceRecordModel(
+            id: '',
+            sessionId: session.id,
+            studentId: result.studentId,
+            attendancePercentage: result.attendancePercentage,
+            attendanceMethod: 'face_recognition',
+            attendanceStatus: result.attendanceStatus,
+            framesDetected: result.framesDetected,
+            totalFrames: result.totalFrames,
+            createdAt: DateTime.now(),
+          ),
+        );
+
+        if (saveResult case Failure<void>(:final exception)) {
+          return Result.failure(exception);
+        }
+      }
+
+      return Result.success(sessionResult);
     } catch (_) {
       return const Result.failure(
         AppException(
-          message: 'Unable to save demo attendance record right now.',
-          code: 'demo_attendance_record_save_failed',
+          message: 'Unable to run face recognition attendance right now.',
+          code: 'face_attendance_run_failed',
         ),
       );
     }
+  }
+
+  Future<Result<void>> saveDemoAttendanceRecordForSession({
+    required AttendanceSessionModel session,
+  }) async {
+    final result = await runFaceRecognitionAttendanceForSession(
+      session: session,
+    );
+
+    if (result case Failure<FaceRecognitionSessionResultModel>(
+      :final exception,
+    )) {
+      return Result.failure(exception);
+    }
+
+    return const Result.success(null);
   }
 
   Future<Result<StudentQrIdentityModel>> getStudentQrIdentity({
@@ -960,6 +1027,159 @@ class AttendanceRepository {
     return reports;
   }
 
+  Future<List<FaceRecognitionStudentCandidateModel>>
+  _loadEnrolledStudentsForSession(AttendanceSessionModel session) async {
+    final client = supabaseService?.client;
+
+    if (client == null) {
+      return const [];
+    }
+
+    final rows = await client
+        .from('student_subjects')
+        .select('student_id, students(name, roll_no)')
+        .eq('subject_id', session.subjectId)
+        .eq('department_id', session.departmentId)
+        .eq('batch_id', session.batchId)
+        .eq('semester_id', session.semesterId)
+        .eq('is_active', true);
+
+    return rows
+        .map((row) {
+          final data = Map<String, dynamic>.from(row);
+          final studentId = data['student_id']?.toString().trim() ?? '';
+          final student = _mapOrNull(data['students']);
+
+          if (studentId.isEmpty) {
+            return null;
+          }
+
+          return FaceRecognitionStudentCandidateModel(
+            studentId: studentId,
+            studentName: _textOrNull(student?['name']),
+            rollNo: _textOrNull(student?['roll_no']),
+          );
+        })
+        .whereType<FaceRecognitionStudentCandidateModel>()
+        .toList();
+  }
+
+  FaceRecognitionSessionResultModel _mergeFaceRecognitionResults({
+    required FaceRecognitionSessionResultModel apiResult,
+    required List<FaceRecognitionStudentCandidateModel> enrolledStudents,
+    required int totalFrames,
+  }) {
+    final resultsByStudentId = <String, FaceRecognitionAttendanceResultModel>{};
+
+    for (final result in apiResult.results) {
+      final studentId = result.studentId.trim();
+
+      if (studentId.isNotEmpty) {
+        resultsByStudentId[studentId] = result;
+      }
+    }
+
+    final mergedResults = enrolledStudents.map((student) {
+      final apiStudentResult = resultsByStudentId[student.studentId];
+
+      if (apiStudentResult == null) {
+        return FaceRecognitionAttendanceResultModel(
+          studentId: student.studentId,
+          studentName: student.studentName,
+          rollNo: student.rollNo,
+          framesDetected: 0,
+          totalFrames: totalFrames,
+          attendancePercentage: 0,
+          attendanceStatus: 'absent',
+          message: 'No face match returned for this student.',
+        );
+      }
+
+      return apiStudentResult.copyWith(
+        studentName: student.studentName ?? apiStudentResult.studentName,
+        rollNo: student.rollNo ?? apiStudentResult.rollNo,
+        totalFrames: apiStudentResult.totalFrames <= 0
+            ? totalFrames
+            : apiStudentResult.totalFrames,
+        recognitionMethod: 'face_recognition',
+      );
+    }).toList();
+
+    return apiResult.copyWith(
+      results: mergedResults,
+      totalFrames: totalFrames,
+      usedFallback: false,
+      message: apiResult.message.trim().isEmpty
+          ? 'Face Recognition API processed the attendance session.'
+          : apiResult.message,
+    );
+  }
+
+  FaceRecognitionSessionResultModel _buildFaceRecognitionFallback({
+    required List<FaceRecognitionStudentCandidateModel> enrolledStudents,
+    required int totalFrames,
+    required String message,
+  }) {
+    final safeTotalFrames = totalFrames <= 0 ? 20 : totalFrames;
+    final ratios = [0.90, 0.80, 0.70, 0.55];
+    final results = <FaceRecognitionAttendanceResultModel>[];
+
+    for (var index = 0; index < enrolledStudents.length; index++) {
+      final student = enrolledStudents[index];
+      final ratio = ratios[index % ratios.length];
+      final framesDetected = (safeTotalFrames * ratio).round();
+      final percentage = ((framesDetected / safeTotalFrames) * 100)
+          .clamp(0, 100)
+          .toDouble();
+
+      results.add(
+        FaceRecognitionAttendanceResultModel(
+          studentId: student.studentId,
+          studentName: student.studentName,
+          rollNo: student.rollNo,
+          framesDetected: framesDetected,
+          totalFrames: safeTotalFrames,
+          attendancePercentage: percentage,
+          attendanceStatus: percentage >= 75 ? 'present' : 'absent',
+          confidence: ratio,
+          message: message,
+        ),
+      );
+    }
+
+    return FaceRecognitionSessionResultModel(
+      results: results,
+      totalFrames: safeTotalFrames,
+      usedFallback: true,
+      message: message,
+    );
+  }
+
+  List<FaceRecognitionStudentCandidateModel> _mockFaceRecognitionCandidates() {
+    return const [
+      FaceRecognitionStudentCandidateModel(
+        studentId: 'mock-student-001',
+        studentName: 'Ali Khan',
+        rollNo: 'BSIT-2022-001',
+      ),
+      FaceRecognitionStudentCandidateModel(
+        studentId: 'mock-student-002',
+        studentName: 'Sara Ahmed',
+        rollNo: 'BSIT-2022-002',
+      ),
+      FaceRecognitionStudentCandidateModel(
+        studentId: 'mock-student-003',
+        studentName: 'Ahmed Raza',
+        rollNo: 'BSIT-2022-003',
+      ),
+      FaceRecognitionStudentCandidateModel(
+        studentId: 'mock-student-004',
+        studentName: 'Fatima Noor',
+        rollNo: 'BSIT-2022-004',
+      ),
+    ];
+  }
+
   Future<StudentQrIdentityModel?> _loadStudentQrIdentity(
     String studentIdentifier,
   ) async {
@@ -1438,6 +1658,16 @@ class AttendanceRepository {
     }
 
     return null;
+  }
+
+  String? _textOrNull(dynamic value) {
+    final text = value?.toString().trim();
+
+    if (text == null || text.isEmpty) {
+      return null;
+    }
+
+    return text;
   }
 
   int _compareReportsDescending(

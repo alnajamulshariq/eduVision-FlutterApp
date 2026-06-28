@@ -4,13 +4,21 @@ import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
 import 'package:eduvision_app/core/widgets/primary_button.dart';
 import 'package:eduvision_app/data/models/attendance_session_model.dart';
+import 'package:eduvision_app/data/models/face_recognition_result_model.dart';
 import 'package:eduvision_app/data/models/timetable_model.dart';
 import 'package:eduvision_app/features/teacher/providers/teacher_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-enum AttendanceDemoStatus { idle, validating, scanning, calculating, completed }
+enum AttendanceDemoStatus {
+  idle,
+  validating,
+  sessionReady,
+  scanning,
+  calculating,
+  completed,
+}
 
 class TeacherStartAttendanceScreen extends ConsumerStatefulWidget {
   const TeacherStartAttendanceScreen({super.key});
@@ -25,6 +33,8 @@ class _TeacherStartAttendanceScreenState
     with SingleTickerProviderStateMixin {
   late final AnimationController _scanController;
   AttendanceDemoStatus _status = AttendanceDemoStatus.idle;
+  AttendanceSessionModel? _createdSession;
+  FaceRecognitionSessionResultModel? _faceResult;
   bool _disposed = false;
 
   @override
@@ -47,6 +57,12 @@ class _TeacherStartAttendanceScreenState
     if (_status != AttendanceDemoStatus.idle) {
       return;
     }
+
+    _scanController.stop();
+    setState(() {
+      _createdSession = null;
+      _faceResult = null;
+    });
 
     await _setDemoState(AttendanceDemoStatus.validating);
 
@@ -79,42 +95,58 @@ class _TeacherStartAttendanceScreenState
     }
 
     if (sessionResult case Success<AttendanceSessionModel>(:final data)) {
+      setState(() {
+        _createdSession = data;
+        _status = AttendanceDemoStatus.sessionReady;
+      });
       _showSnackBar('Attendance session created successfully.');
-
-      final recordResult = await ref
-          .read(teacherAttendanceRepositoryProvider)
-          .saveDemoAttendanceRecordForSession(session: data);
-
-      if (_disposed) {
-        return;
-      }
-
-      if (recordResult case Failure<void>(:final exception)) {
-        await _setDemoState(AttendanceDemoStatus.idle);
-        _showSnackBar(exception.message);
-        return;
-      }
-
-      _showSnackBar('Attendance record saved successfully.');
     }
+  }
 
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (_disposed) {
+  Future<void> _runFaceRecognitionScan() async {
+    final session = _createdSession;
+
+    if (_status != AttendanceDemoStatus.sessionReady || session == null) {
       return;
     }
 
     _scanController.repeat(reverse: true);
     await _setDemoState(AttendanceDemoStatus.scanning);
-    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+
+    if (_disposed) {
+      return;
+    }
+
+    final result = await ref
+        .read(teacherAttendanceRepositoryProvider)
+        .runFaceRecognitionAttendanceForSession(session: session);
+
+    if (_disposed) {
+      return;
+    }
+
+    await _setDemoState(AttendanceDemoStatus.calculating);
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+
     if (_disposed) {
       return;
     }
 
     _scanController.stop();
-    await _setDemoState(AttendanceDemoStatus.calculating);
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
-    if (_disposed) {
+
+    if (result case Failure<FaceRecognitionSessionResultModel>(
+      :final exception,
+    )) {
+      await _setDemoState(AttendanceDemoStatus.sessionReady);
+      _showSnackBar(exception.message);
       return;
+    }
+
+    if (result case Success<FaceRecognitionSessionResultModel>(:final data)) {
+      setState(() => _faceResult = data);
+      ref.invalidate(teacherAttendanceReportsProvider);
+      _showSnackBar(data.message);
     }
 
     await _setDemoState(AttendanceDemoStatus.completed);
@@ -130,7 +162,11 @@ class _TeacherStartAttendanceScreenState
   void _restartDemo() {
     _scanController.stop();
     _scanController.value = 0;
-    setState(() => _status = AttendanceDemoStatus.idle);
+    setState(() {
+      _createdSession = null;
+      _faceResult = null;
+      _status = AttendanceDemoStatus.idle;
+    });
   }
 
   void _showSnackBar(String message) {
@@ -156,6 +192,12 @@ class _TeacherStartAttendanceScreenState
       orElse: () => null,
     );
     final canStartAttendance = activeClass != null;
+    final faceApiConfigured =
+        ref
+            .watch(teacherAttendanceRepositoryProvider)
+            .faceApiService
+            ?.isConfigured ??
+        false;
 
     return ModuleScreenShell(
       title: 'Start Attendance',
@@ -173,6 +215,8 @@ class _TeacherStartAttendanceScreenState
             ),
             icon: _status == AttendanceDemoStatus.completed
                 ? Icons.check_circle_rounded
+                : _status == AttendanceDemoStatus.sessionReady
+                ? Icons.fact_check_rounded
                 : _status == AttendanceDemoStatus.idle && !canStartAttendance
                 ? Icons.lock_clock_rounded
                 : Icons.play_arrow_rounded,
@@ -184,14 +228,49 @@ class _TeacherStartAttendanceScreenState
                 : null,
           ),
         ),
+        if (_status == AttendanceDemoStatus.sessionReady &&
+            _createdSession != null)
+          ModulePanel(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                ModuleInfoTile(
+                  title: faceApiConfigured
+                      ? 'Face Recognition API Ready'
+                      : 'Face Recognition demo fallback ready',
+                  subtitle: faceApiConfigured
+                      ? 'Run the Python API contract for this active session.'
+                      : 'No Face API URL is configured, so demo results will be saved safely.',
+                  icon: faceApiConfigured
+                      ? Icons.cloud_done_rounded
+                      : Icons.science_rounded,
+                  color: faceApiConfigured ? AppColors.cyan : AppColors.amber,
+                  trailing: ModuleBadge(
+                    label: faceApiConfigured ? 'API' : 'Fallback',
+                    color: faceApiConfigured ? AppColors.cyan : AppColors.amber,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                PrimaryButton(
+                  label: faceApiConfigured
+                      ? 'Start Face Recognition Scan'
+                      : 'Run Face Recognition Demo',
+                  icon: Icons.face_retouching_natural_rounded,
+                  minHeight: 50,
+                  onPressed: _runFaceRecognitionScan,
+                ),
+              ],
+            ),
+          ),
         _ProcessTimeline(status: _status),
         _FaceRecognitionPreview(
           status: _status,
           scanAnimation: _scanController,
         ),
-        if (_status == AttendanceDemoStatus.completed) ...[
-          const _AttendanceSummaryCard(),
-          const _AttendanceResultsPanel(),
+        if (_status == AttendanceDemoStatus.completed &&
+            _faceResult != null) ...[
+          _AttendanceSummaryCard(result: _faceResult!),
+          _AttendanceResultsPanel(results: _faceResult!.results),
           ModulePanel(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -250,6 +329,7 @@ class _TeacherStartAttendanceScreenState
 
     return switch (_status) {
       AttendanceDemoStatus.validating => 'Creating attendance session...',
+      AttendanceDemoStatus.sessionReady => 'Session Ready',
       AttendanceDemoStatus.scanning => 'Capturing face frames...',
       AttendanceDemoStatus.calculating => 'Calculating attendance...',
       AttendanceDemoStatus.completed => 'Preview Completed',
@@ -473,6 +553,12 @@ class _ProcessTimeline extends StatelessWidget {
   }
 
   _ProcessRowState _rowState(int index) {
+    if (status == AttendanceDemoStatus.sessionReady) {
+      return index <= 1
+          ? _ProcessRowState.completed
+          : _ProcessRowState.inactive;
+    }
+
     final currentIndex = _currentStepIndex;
     if (status == AttendanceDemoStatus.completed || index < currentIndex) {
       return _ProcessRowState.completed;
@@ -487,6 +573,7 @@ class _ProcessTimeline extends StatelessWidget {
     return switch (status) {
       AttendanceDemoStatus.idle => 0,
       AttendanceDemoStatus.validating => 0,
+      AttendanceDemoStatus.sessionReady => 2,
       AttendanceDemoStatus.scanning => 2,
       AttendanceDemoStatus.calculating => 4,
       AttendanceDemoStatus.completed => _steps.length,
@@ -575,6 +662,7 @@ class _FaceRecognitionPreview extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final isScanning = status == AttendanceDemoStatus.scanning;
     final isCompleted = status == AttendanceDemoStatus.completed;
+    final isReady = status == AttendanceDemoStatus.sessionReady;
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -656,9 +744,15 @@ class _FaceRecognitionPreview extends StatelessWidget {
                   left: 14,
                   bottom: 12,
                   child: ModuleBadge(
-                    label: isCompleted ? 'Completed' : 'Camera Preview',
+                    label: isCompleted
+                        ? 'Completed'
+                        : isReady
+                        ? 'Session Ready'
+                        : 'Camera Preview',
                     icon: isCompleted
                         ? Icons.check_circle_rounded
+                        : isReady
+                        ? Icons.fact_check_rounded
                         : Icons.videocam_rounded,
                     color: isCompleted ? AppColors.cyan : AppColors.blue,
                   ),
@@ -670,6 +764,8 @@ class _FaceRecognitionPreview extends StatelessWidget {
           Text(
             isCompleted
                 ? 'Face recognition preview completed.'
+                : isReady
+                ? 'Session ready for face recognition scan.'
                 : isScanning
                 ? 'Detecting visible students...'
                 : 'Face recognition preview is ready.',
@@ -718,72 +814,83 @@ class _FaceBox extends StatelessWidget {
 }
 
 class _AttendanceSummaryCard extends StatelessWidget {
-  const _AttendanceSummaryCard();
+  const _AttendanceSummaryCard({required this.result});
+
+  final FaceRecognitionSessionResultModel result;
 
   @override
   Widget build(BuildContext context) {
-    return const ModulePanel(
-      padding: EdgeInsets.all(14),
+    final modeColor = result.usedFallback ? AppColors.amber : AppColors.cyan;
+
+    return ModulePanel(
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ModuleInfoTile(
-            title: 'Preview Completed',
+            title: result.usedFallback
+                ? 'Face Recognition demo fallback used'
+                : 'Face Recognition API completed',
             subtitle: 'Session Status',
-            icon: Icons.verified_rounded,
-            color: AppColors.cyan,
-            trailing: ModuleBadge(label: 'Completed', color: AppColors.cyan),
+            icon: result.usedFallback
+                ? Icons.science_rounded
+                : Icons.verified_rounded,
+            color: modeColor,
+            trailing: ModuleBadge(
+              label: result.usedFallback ? 'Fallback' : 'API',
+              color: modeColor,
+            ),
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Total Students',
-                  value: '4',
+                  value: result.totalStudents.toString(),
                   icon: Icons.groups_rounded,
                   color: AppColors.cyan,
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Present',
-                  value: '3',
+                  value: result.presentCount.toString(),
                   icon: Icons.check_circle_rounded,
                   color: AppColors.blue,
                 ),
               ),
             ],
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Absent',
-                  value: '1',
+                  value: result.absentCount.toString(),
                   icon: Icons.warning_rounded,
                   color: AppColors.amber,
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: ModuleMetricCard(
                   label: 'Face Recognized',
-                  value: '3',
+                  value: result.recognizedStudents.toString(),
                   icon: Icons.face_retouching_natural_rounded,
-                  color: Color(0xFFB48CFF),
+                  color: AppColors.cyan,
                 ),
               ),
             ],
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           ModuleMetricCard(
-            label: 'QR Backup',
-            value: '1',
-            icon: Icons.qr_code_2_rounded,
-            color: Color(0xFFFF8A7A),
+            label: 'Frames',
+            value: result.totalFrames.toString(),
+            icon: Icons.photo_camera_rounded,
+            color: AppColors.blue,
           ),
         ],
       ),
@@ -792,34 +899,9 @@ class _AttendanceSummaryCard extends StatelessWidget {
 }
 
 class _AttendanceResultsPanel extends StatelessWidget {
-  const _AttendanceResultsPanel();
+  const _AttendanceResultsPanel({required this.results});
 
-  static const _results = [
-    _AttendanceResult(
-      name: 'Ali Khan',
-      frames: '18/20',
-      attendance: 90,
-      method: 'Face Recognition',
-    ),
-    _AttendanceResult(
-      name: 'Sara Ahmed',
-      frames: '16/20',
-      attendance: 80,
-      method: 'Face Recognition',
-    ),
-    _AttendanceResult(
-      name: 'Ahmed Raza',
-      frames: '14/20',
-      attendance: 70,
-      method: 'Face Recognition',
-    ),
-    _AttendanceResult(
-      name: 'Fatima Noor',
-      frames: 'QR Backup',
-      attendance: 100,
-      method: 'Dynamic QR',
-    ),
-  ];
+  final List<FaceRecognitionAttendanceResultModel> results;
 
   @override
   Widget build(BuildContext context) {
@@ -835,10 +917,18 @@ class _AttendanceResultsPanel extends StatelessWidget {
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
-          for (final result in _results) ...[
-            _AttendanceResultTile(result: result),
-            if (result != _results.last) const SizedBox(height: 10),
-          ],
+          if (results.isEmpty)
+            const ModuleInfoTile(
+              title: 'No face results returned',
+              subtitle: 'No attendance records were available for display.',
+              icon: Icons.inbox_rounded,
+              color: AppColors.amber,
+            )
+          else
+            for (final result in results) ...[
+              _AttendanceResultTile(result: result),
+              if (result != results.last) const SizedBox(height: 10),
+            ],
         ],
       ),
     );
@@ -848,17 +938,18 @@ class _AttendanceResultsPanel extends StatelessWidget {
 class _AttendanceResultTile extends StatelessWidget {
   const _AttendanceResultTile({required this.result});
 
-  final _AttendanceResult result;
+  final FaceRecognitionAttendanceResultModel result;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final isPresent = result.attendance >= 75;
+    final isPresent = result.attendanceStatus == 'present';
     final statusColor = isPresent ? colorScheme.secondary : AppColors.red;
-    final methodColor = result.method == 'Dynamic QR'
-        ? AppColors.amber
-        : colorScheme.primary;
+    final methodColor = colorScheme.primary;
+    final studentLabel = result.studentName?.trim().isNotEmpty ?? false
+        ? result.studentName!
+        : result.studentId;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -874,7 +965,7 @@ class _AttendanceResultTile extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  result.name,
+                  studentLabel,
                   style: textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
@@ -893,20 +984,18 @@ class _AttendanceResultTile extends StatelessWidget {
             runSpacing: 8,
             children: [
               ModuleBadge(
-                label: 'Frames: ${result.frames}',
+                label: 'Frames: ${result.framesDetected}/${result.totalFrames}',
                 icon: Icons.photo_camera_rounded,
                 color: colorScheme.secondary,
               ),
               ModuleBadge(
-                label: '${result.attendance}%',
+                label: '${result.attendancePercentage.round()}%',
                 icon: Icons.percent_rounded,
                 color: statusColor,
               ),
               ModuleBadge(
-                label: result.method,
-                icon: result.method == 'Dynamic QR'
-                    ? Icons.qr_code_2_rounded
-                    : Icons.face_retouching_natural_rounded,
+                label: 'Face Recognition',
+                icon: Icons.face_retouching_natural_rounded,
                 color: methodColor,
               ),
             ],
@@ -915,18 +1004,4 @@ class _AttendanceResultTile extends StatelessWidget {
       ),
     );
   }
-}
-
-class _AttendanceResult {
-  const _AttendanceResult({
-    required this.name,
-    required this.frames,
-    required this.attendance,
-    required this.method,
-  });
-
-  final String name;
-  final String frames;
-  final int attendance;
-  final String method;
 }
