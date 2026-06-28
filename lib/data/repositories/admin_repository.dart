@@ -7,6 +7,7 @@ import 'package:eduvision_app/data/models/department_model.dart';
 import 'package:eduvision_app/data/models/semester_model.dart';
 import 'package:eduvision_app/data/models/student_model.dart';
 import 'package:eduvision_app/data/models/subject_model.dart';
+import 'package:eduvision_app/data/models/system_activity_log_model.dart';
 import 'package:eduvision_app/data/models/teacher_model.dart';
 import 'package:eduvision_app/data/services/supabase_service.dart';
 
@@ -259,6 +260,58 @@ class AdminRepository {
         AppException(
           message: 'Unable to load academic management data right now.',
           code: 'admin_academics_load_failed',
+        ),
+      );
+    }
+  }
+
+  Future<Result<List<SystemActivityLogModel>>> getSystemActivityLogs() async {
+    if (_shouldUseMockData) {
+      return Result.success(_mockSystemActivityLogs());
+    }
+
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final rows = await client
+          .from('system_activity_logs')
+          .select('''
+            id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            description,
+            metadata,
+            created_at,
+            actor:app_users!system_activity_logs_actor_user_id_fkey(name)
+          ''')
+          .order('created_at', ascending: false)
+          .limit(50);
+
+      final logs = rows
+          .map(
+            (row) =>
+                SystemActivityLogModel.fromJson(Map<String, dynamic>.from(row)),
+          )
+          .toList();
+
+      return Result.success(logs);
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message: 'Unable to load system activity right now.',
+          code: 'system_activity_load_failed',
         ),
       );
     }
@@ -746,6 +799,41 @@ class AdminRepository {
         ),
       ],
     );
+  }
+
+  List<SystemActivityLogModel> _mockSystemActivityLogs() {
+    final now = DateTime.now().toUtc();
+
+    return [
+      SystemActivityLogModel(
+        id: 'mock-activity-user',
+        actorUserId: 'mock-admin-user-001',
+        actorName: 'Admin User',
+        action: 'user_created',
+        targetType: 'student',
+        targetId: 'mock-student-user-001',
+        description: 'Student account created successfully.',
+        createdAt: now.subtract(const Duration(minutes: 9)),
+      ),
+      SystemActivityLogModel(
+        id: 'mock-activity-assignment',
+        actorUserId: 'mock-admin-user-001',
+        actorName: 'Admin User',
+        action: 'teacher_assigned',
+        targetType: 'teacher_subject',
+        targetId: 'mock-assignment-001',
+        description: 'Teacher assigned to subject for demo batch.',
+        createdAt: now.subtract(const Duration(minutes: 24)),
+      ),
+      SystemActivityLogModel(
+        id: 'mock-activity-email',
+        action: 'parent_email_sent',
+        targetType: 'gate_log',
+        targetId: 'mock-gate-log-003',
+        description: 'Parent gate notification sent.',
+        createdAt: now.subtract(const Duration(hours: 1)),
+      ),
+    ];
   }
 
   bool get _shouldUseMockData {

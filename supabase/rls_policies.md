@@ -16,6 +16,7 @@ This document is a planning guide only. Final production Row Level Security poli
 - Admin can create and manage student, teacher, and admin records.
 - Admin can create departments, batches, semesters, subjects, assignments, timetables, and enrollments.
 - Admin can view attendance reports, gate logs, message reports, and audit-relevant records.
+- Admin can view `system_activity_logs` for recent secure operations and monitoring.
 - Admin can reveal the sender only for anonymous messages that have been reported for review.
 
 ## Student Access
@@ -58,4 +59,5 @@ This document is a planning guide only. Final production Row Level Security poli
 
 - Final policies should be tested with separate student, teacher, and admin Supabase Auth users.
 - Sensitive operations such as password reset, sender reveal, and parent email notification should be implemented with secure server-side functions.
+- Audit inserts should avoid passwords, secrets, raw email contents, and other sensitive payloads.
 - RLS should be finalized before real credentials, real users, or production data are added.

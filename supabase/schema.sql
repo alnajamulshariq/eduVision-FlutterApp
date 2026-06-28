@@ -230,6 +230,17 @@ create table if not exists message_reports (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists system_activity_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_user_id uuid references app_users(id) on delete set null,
+  action text not null,
+  target_type text,
+  target_id text,
+  description text,
+  metadata jsonb,
+  created_at timestamptz not null default now()
+);
+
 create or replace function set_updated_at()
 returns trigger as $$
 begin
@@ -345,6 +356,12 @@ create index if not exists anonymous_messages_student_id_idx
 create index if not exists message_reports_message_id_idx
   on message_reports (message_id);
 
+create index if not exists system_activity_logs_created_at_idx
+  on system_activity_logs (created_at desc);
+
+create index if not exists system_activity_logs_actor_user_id_idx
+  on system_activity_logs (actor_user_id);
+
 create index if not exists teacher_timetables_teacher_id_idx
   on teacher_timetables (teacher_id);
 
@@ -388,3 +405,4 @@ alter table attendance_records enable row level security;
 alter table gate_logs enable row level security;
 alter table anonymous_messages enable row level security;
 alter table message_reports enable row level security;
+alter table system_activity_logs enable row level security;

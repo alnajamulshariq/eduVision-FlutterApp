@@ -43,6 +43,7 @@ abstract final class AppRoutes {
   static const adminGateLogs = '/admin/gate-logs';
   static const adminGateQrScanner = '/admin/gate-qr-scanner';
   static const adminMessageReports = '/admin/message-reports';
+  static const adminSystemActivity = '/admin/system-activity';
 
   static String dashboardForRole(String role) {
     return switch (role.toLowerCase()) {

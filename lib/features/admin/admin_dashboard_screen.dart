@@ -81,6 +81,15 @@ class AdminDashboardScreen extends StatelessWidget {
             context.push(AppRoutes.adminMessageReports);
           },
         ),
+        DashboardActionCard(
+          title: 'System Activity',
+          subtitle: 'Audit trail and secure operations',
+          icon: Icons.manage_search_rounded,
+          accentColor: Color(0xFF34C9A5),
+          onTap: () {
+            context.push(AppRoutes.adminSystemActivity);
+          },
+        ),
       ],
     );
   }

@@ -103,6 +103,14 @@ Deno.serve(async (request) => {
   const parentEmail = `${student.parent_email ?? ''}`.trim();
 
   if (!parentEmail) {
+    await logActivity(supabase, {
+      action: 'parent_email_skipped',
+      targetType: 'gate_log',
+      targetId: gateLogId,
+      description: 'Parent email skipped because parent email is missing.',
+      metadata: { status: 'parent_email_missing' },
+    });
+
     return jsonResponse(
       {
         success: true,
@@ -118,6 +126,14 @@ Deno.serve(async (request) => {
   const fromAddress = Deno.env.get('PARENT_EMAIL_FROM');
 
   if (!resendApiKey || !fromAddress) {
+    await logActivity(supabase, {
+      action: 'parent_email_skipped',
+      targetType: 'gate_log',
+      targetId: gateLogId,
+      description: 'Parent email skipped because provider is not configured.',
+      metadata: { status: 'provider_not_configured' },
+    });
+
     return jsonResponse(
       {
         success: true,
@@ -154,6 +170,14 @@ Deno.serve(async (request) => {
   });
 
   if (!emailResponse.ok) {
+    await logActivity(supabase, {
+      action: 'parent_email_failed',
+      targetType: 'gate_log',
+      targetId: gateLogId,
+      description: 'Parent gate notification failed.',
+      metadata: { status: 'failed' },
+    });
+
     return jsonResponse(
       {
         success: true,
@@ -169,6 +193,14 @@ Deno.serve(async (request) => {
     .from('gate_logs')
     .update({ parent_email_sent: true })
     .eq('id', gateLogId);
+
+  await logActivity(supabase, {
+    action: 'parent_email_sent',
+    targetType: 'gate_log',
+    targetId: gateLogId,
+    description: 'Parent gate notification sent.',
+    metadata: { status: 'sent' },
+  });
 
   return jsonResponse(
     {
@@ -188,6 +220,26 @@ async function readJsonBody(request: Request): Promise<JsonBody | null> {
   } catch (_) {
     return null;
   }
+}
+
+async function logActivity(
+  supabase: ReturnType<typeof createClient>,
+  event: {
+    action: string;
+    targetType?: string;
+    targetId?: string;
+    description?: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  await supabase.from('system_activity_logs').insert({
+    actor_user_id: null,
+    action: event.action,
+    target_type: event.targetType ?? null,
+    target_id: event.targetId ?? null,
+    description: event.description ?? null,
+    metadata: event.metadata ?? null,
+  });
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {

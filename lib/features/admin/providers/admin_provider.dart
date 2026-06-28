@@ -3,6 +3,7 @@ import 'package:eduvision_app/data/models/admin_management_model.dart';
 import 'package:eduvision_app/data/models/anonymous_message_model.dart';
 import 'package:eduvision_app/data/models/attendance_report_model.dart';
 import 'package:eduvision_app/data/models/gate_log_model.dart';
+import 'package:eduvision_app/data/models/system_activity_log_model.dart';
 import 'package:eduvision_app/data/repositories/admin_repository.dart';
 import 'package:eduvision_app/data/repositories/attendance_repository.dart';
 import 'package:eduvision_app/data/repositories/gate_repository.dart';
@@ -107,6 +108,29 @@ final adminAcademicOverviewProvider =
         teacherAssignments: [],
         studentEnrollments: [],
       );
+    });
+
+final adminSystemActivityLogsProvider =
+    FutureProvider.autoDispose<List<SystemActivityLogModel>>((ref) async {
+      final currentUser = ref.watch(authControllerProvider).user;
+
+      if (currentUser == null || currentUser.role.toLowerCase() != 'admin') {
+        return [];
+      }
+
+      final result = await ref
+          .watch(adminRepositoryProvider)
+          .getSystemActivityLogs();
+
+      if (result case Success<List<SystemActivityLogModel>>(:final data)) {
+        return data;
+      }
+
+      if (result case Failure<List<SystemActivityLogModel>>(:final exception)) {
+        throw Exception(exception.message);
+      }
+
+      return [];
     });
 
 final adminAttendanceReportsProvider =

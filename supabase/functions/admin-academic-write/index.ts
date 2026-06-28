@@ -26,8 +26,8 @@ Deno.serve(async (request) => {
     return jsonResponse(failure('Admin service is not configured.'), 500);
   }
 
-  const isAdmin = await verifyAdminCaller(request, admin);
-  if (!isAdmin) {
+  const actorUserId = await verifyAdminCaller(request, admin);
+  if (!actorUserId) {
     return jsonResponse(failure('Only admins can perform this action.'), 403);
   }
 
@@ -40,6 +40,13 @@ Deno.serve(async (request) => {
   }
 
   const result = await runOperation(admin, operation, payload);
+  if (result.success === true) {
+    await logActivity(admin, {
+      actorUserId,
+      ...auditEventForOperation(operation, `${result.recordId ?? ''}`),
+    });
+  }
+
   return jsonResponse(result);
 });
 
@@ -193,6 +200,87 @@ async function runOperation(
   return failure('Unsupported academic operation.');
 }
 
+function auditEventForOperation(
+  operation: string,
+  recordId: string,
+): {
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  description: string;
+  metadata: Record<string, unknown>;
+} {
+  const targetId = recordId.trim() || null;
+
+  if (operation === 'create_department') {
+    return {
+      action: 'department_created',
+      targetType: 'department',
+      targetId,
+      description: 'Department created successfully.',
+      metadata: { operation },
+    };
+  }
+
+  if (operation === 'create_batch') {
+    return {
+      action: 'batch_created',
+      targetType: 'batch',
+      targetId,
+      description: 'Batch created successfully.',
+      metadata: { operation },
+    };
+  }
+
+  if (operation === 'create_semester') {
+    return {
+      action: 'semester_created',
+      targetType: 'semester',
+      targetId,
+      description: 'Semester created successfully.',
+      metadata: { operation },
+    };
+  }
+
+  if (operation === 'create_subject') {
+    return {
+      action: 'subject_created',
+      targetType: 'subject',
+      targetId,
+      description: 'Subject created successfully.',
+      metadata: { operation },
+    };
+  }
+
+  if (operation === 'assign_teacher') {
+    return {
+      action: 'teacher_assigned',
+      targetType: 'teacher_subject',
+      targetId,
+      description: 'Teacher assigned successfully.',
+      metadata: { operation },
+    };
+  }
+
+  if (operation === 'enroll_student') {
+    return {
+      action: 'student_enrolled',
+      targetType: 'student_subject',
+      targetId,
+      description: 'Student enrolled successfully.',
+      metadata: { operation },
+    };
+  }
+
+  return {
+    action: 'academic_write_completed',
+    targetType: 'academic_record',
+    targetId,
+    description: 'Academic write completed successfully.',
+    metadata: { operation },
+  };
+}
+
 function writeResult(
   error: unknown,
   recordId: string | undefined,
@@ -221,15 +309,15 @@ function createServiceClient() {
 async function verifyAdminCaller(
   request: Request,
   admin: ReturnType<typeof createClient>,
-): Promise<boolean> {
+): Promise<string | null> {
   const token = readBearerToken(request);
   if (!token) {
-    return false;
+    return null;
   }
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) {
-    return false;
+    return null;
   }
 
   const { data: appUser } = await admin
@@ -238,7 +326,30 @@ async function verifyAdminCaller(
     .eq('id', data.user.id)
     .maybeSingle();
 
-  return appUser?.role === 'admin' && appUser?.is_active === true;
+  return appUser?.role === 'admin' && appUser?.is_active === true
+    ? data.user.id
+    : null;
+}
+
+async function logActivity(
+  admin: ReturnType<typeof createClient>,
+  event: {
+    actorUserId: string;
+    action: string;
+    targetType?: string;
+    targetId?: string | null;
+    description?: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  await admin.from('system_activity_logs').insert({
+    actor_user_id: event.actorUserId,
+    action: event.action,
+    target_type: event.targetType ?? null,
+    target_id: event.targetId ?? null,
+    description: event.description ?? null,
+    metadata: event.metadata ?? null,
+  });
 }
 
 function readBearerToken(request: Request): string | null {

@@ -19,7 +19,12 @@ grant select on table
   public.face_embeddings,
   public.teacher_subjects,
   public.student_subjects,
-  public.teacher_timetables
+  public.teacher_timetables,
+  public.system_activity_logs
+to authenticated;
+
+grant insert on table
+  public.system_activity_logs
 to authenticated;
 
 grant update (is_first_login, password_changed_once, updated_at)
@@ -118,6 +123,7 @@ alter table public.attendance_records enable row level security;
 alter table public.gate_logs enable row level security;
 alter table public.anonymous_messages enable row level security;
 alter table public.message_reports enable row level security;
+alter table public.system_activity_logs enable row level security;
 
 -- =========================================================
 -- DROP OLD POLICIES
@@ -158,6 +164,9 @@ drop policy if exists "ev_anonymous_messages_update_teacher_or_admin" on public.
 drop policy if exists "ev_message_reports_select_authenticated" on public.message_reports;
 drop policy if exists "ev_message_reports_insert_teacher" on public.message_reports;
 drop policy if exists "ev_message_reports_update_admin" on public.message_reports;
+
+drop policy if exists "ev_system_activity_logs_select_admin" on public.system_activity_logs;
+drop policy if exists "ev_system_activity_logs_insert_admin" on public.system_activity_logs;
 
 -- =========================================================
 -- APP USERS
@@ -411,3 +420,25 @@ for update
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+-- =========================================================
+-- SYSTEM ACTIVITY LOGS
+-- =========================================================
+
+create policy "ev_system_activity_logs_select_admin"
+on public.system_activity_logs
+for select
+to authenticated
+using (public.is_admin());
+
+create policy "ev_system_activity_logs_insert_admin"
+on public.system_activity_logs
+for insert
+to authenticated
+with check (
+  public.is_admin()
+  and (
+    actor_user_id is null
+    or actor_user_id = auth.uid()
+  )
+);

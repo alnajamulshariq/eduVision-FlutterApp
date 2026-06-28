@@ -26,8 +26,8 @@ Deno.serve(async (request) => {
     return jsonResponse(failure('Admin service is not configured.'), 500);
   }
 
-  const isAdmin = await verifyAdminCaller(request, admin);
-  if (!isAdmin) {
+  const actorUserId = await verifyAdminCaller(request, admin);
+  if (!actorUserId) {
     return jsonResponse(failure('Only admins can perform this action.'), 403);
   }
 
@@ -55,6 +55,14 @@ Deno.serve(async (request) => {
     .update({ is_first_login: true, password_changed_once: false })
     .eq('id', userId);
 
+  await logActivity(admin, {
+    actorUserId,
+    action: 'password_reset',
+    targetType: 'user',
+    targetId: userId,
+    description: 'Temporary password reset successfully.',
+  });
+
   return jsonResponse({
     success: true,
     message: 'Temporary password set successfully.',
@@ -77,15 +85,15 @@ function createServiceClient() {
 async function verifyAdminCaller(
   request: Request,
   admin: ReturnType<typeof createClient>,
-): Promise<boolean> {
+): Promise<string | null> {
   const token = readBearerToken(request);
   if (!token) {
-    return false;
+    return null;
   }
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) {
-    return false;
+    return null;
   }
 
   const { data: appUser } = await admin
@@ -94,7 +102,30 @@ async function verifyAdminCaller(
     .eq('id', data.user.id)
     .maybeSingle();
 
-  return appUser?.role === 'admin' && appUser?.is_active === true;
+  return appUser?.role === 'admin' && appUser?.is_active === true
+    ? data.user.id
+    : null;
+}
+
+async function logActivity(
+  admin: ReturnType<typeof createClient>,
+  event: {
+    actorUserId: string;
+    action: string;
+    targetType?: string;
+    targetId?: string;
+    description?: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  await admin.from('system_activity_logs').insert({
+    actor_user_id: event.actorUserId,
+    action: event.action,
+    target_type: event.targetType ?? null,
+    target_id: event.targetId ?? null,
+    description: event.description ?? null,
+    metadata: event.metadata ?? null,
+  });
 }
 
 function readBearerToken(request: Request): string | null {

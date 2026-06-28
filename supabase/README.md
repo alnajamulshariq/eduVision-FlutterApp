@@ -48,7 +48,7 @@ Completed:
 - Row Level Security enabled
 - Helper functions added for role checks
 - Grants added for authenticated users
-- RLS policies added for app users, academics, attendance, gate logs, anonymous messages, and message reports
+- RLS policies added for app users, academics, attendance, gate logs, anonymous messages, message reports, and system activity logs
 - Demo auth users created manually in Supabase Auth
 - `app_users` profiles linked with real Supabase Auth user IDs
 - Demo academic data inserted

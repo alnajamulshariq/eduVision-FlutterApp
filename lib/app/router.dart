@@ -5,6 +5,7 @@ import 'package:eduvision_app/features/admin/screens/admin_attendance_reports_sc
 import 'package:eduvision_app/features/admin/screens/admin_gate_logs_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_gate_qr_scanner_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_message_reports_screen.dart';
+import 'package:eduvision_app/features/admin/screens/admin_system_activity_screen.dart';
 import 'package:eduvision_app/features/admin/screens/admin_users_screen.dart';
 import 'package:eduvision_app/features/auth/change_password_screen.dart';
 import 'package:eduvision_app/features/auth/login_screen.dart';
@@ -165,6 +166,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.adminMessageReports,
         name: 'admin-message-reports',
         builder: (context, state) => const AdminMessageReportsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminSystemActivity,
+        name: 'admin-system-activity',
+        builder: (context, state) => const AdminSystemActivityScreen(),
       ),
     ],
   );
