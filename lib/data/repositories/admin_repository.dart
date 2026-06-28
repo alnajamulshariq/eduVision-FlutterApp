@@ -282,6 +282,204 @@ class AdminRepository {
     return _secureBackendRequired('Admin account creation');
   }
 
+  Future<Result<AdminWriteResultModel>> createUserAccount({
+    required AdminCreateUserRequestModel request,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock admin user creation completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-create-user',
+      body: request.toJson(),
+    );
+  }
+
+  Future<Result<AdminWriteResultModel>> resetUserPassword({
+    required AdminResetPasswordRequestModel request,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock password reset completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-reset-password',
+      body: request.toJson(),
+    );
+  }
+
+  Future<Result<AdminWriteResultModel>> createDepartmentSecure({
+    required String name,
+    required String code,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock department creation completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-academic-write',
+      body: AdminAcademicWriteRequestModel(
+        operation: 'create_department',
+        payload: {'name': name.trim(), 'code': code.trim().toUpperCase()},
+      ).toJson(),
+    );
+  }
+
+  Future<Result<AdminWriteResultModel>> createSubjectSecure({
+    required String name,
+    required String code,
+    required String departmentId,
+    required String semesterId,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock subject creation completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-academic-write',
+      body: AdminAcademicWriteRequestModel(
+        operation: 'create_subject',
+        payload: {
+          'name': name.trim(),
+          'code': code.trim().toUpperCase(),
+          'departmentId': departmentId.trim(),
+          'semesterId': semesterId.trim(),
+        },
+      ).toJson(),
+    );
+  }
+
+  Future<Result<AdminWriteResultModel>> createBatchSecure({
+    required String name,
+    required int year,
+    required String departmentId,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock batch creation completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-academic-write',
+      body: AdminAcademicWriteRequestModel(
+        operation: 'create_batch',
+        payload: {
+          'name': name.trim(),
+          'year': year,
+          'departmentId': departmentId.trim(),
+        },
+      ).toJson(),
+    );
+  }
+
+  Future<Result<AdminWriteResultModel>> createSemesterSecure({
+    required String name,
+    required int number,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock semester creation completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-academic-write',
+      body: AdminAcademicWriteRequestModel(
+        operation: 'create_semester',
+        payload: {'name': name.trim(), 'number': number},
+      ).toJson(),
+    );
+  }
+
+  Future<Result<AdminWriteResultModel>> assignTeacherSecure({
+    required String teacherId,
+    required String subjectId,
+    required String departmentId,
+    required String batchId,
+    required String semesterId,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock teacher assignment completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-academic-write',
+      body: AdminAcademicWriteRequestModel(
+        operation: 'assign_teacher',
+        payload: {
+          'teacherId': teacherId.trim(),
+          'subjectId': subjectId.trim(),
+          'departmentId': departmentId.trim(),
+          'batchId': batchId.trim(),
+          'semesterId': semesterId.trim(),
+        },
+      ).toJson(),
+    );
+  }
+
+  Future<Result<AdminWriteResultModel>> enrollStudentSecure({
+    required String studentId,
+    required String subjectId,
+    required String departmentId,
+    required String batchId,
+    required String semesterId,
+  }) async {
+    if (_shouldUseMockData) {
+      return const Result.success(
+        AdminWriteResultModel(
+          success: true,
+          message: 'Mock student enrollment completed.',
+        ),
+      );
+    }
+
+    return _invokeAdminFunction(
+      functionName: 'admin-academic-write',
+      body: AdminAcademicWriteRequestModel(
+        operation: 'enroll_student',
+        payload: {
+          'studentId': studentId.trim(),
+          'subjectId': subjectId.trim(),
+          'departmentId': departmentId.trim(),
+          'batchId': batchId.trim(),
+          'semesterId': semesterId.trim(),
+        },
+      ).toJson(),
+    );
+  }
+
   Future<Result<DepartmentModel>> createDepartment({
     required DepartmentModel department,
   }) async {
@@ -327,6 +525,53 @@ class AdminRepository {
         code: 'secure_backend_required',
       ),
     );
+  }
+
+  Future<Result<AdminWriteResultModel>> _invokeAdminFunction({
+    required String functionName,
+    required Map<String, dynamic> body,
+  }) async {
+    try {
+      final client = supabaseService?.client;
+
+      if (client == null) {
+        return const Result.failure(
+          AppException(
+            message:
+                'Supabase is not configured. Please check environment setup.',
+            code: 'supabase_not_ready',
+          ),
+        );
+      }
+
+      final response = await client.functions.invoke(functionName, body: body);
+      final data = response.data;
+
+      if (data is Map<String, dynamic>) {
+        return Result.success(AdminWriteResultModel.fromJson(data));
+      }
+
+      if (data is Map) {
+        return Result.success(
+          AdminWriteResultModel.fromJson(Map<String, dynamic>.from(data)),
+        );
+      }
+
+      return const Result.failure(
+        AppException(
+          message: 'Admin action returned an invalid response.',
+          code: 'admin_function_invalid_response',
+        ),
+      );
+    } catch (_) {
+      return const Result.failure(
+        AppException(
+          message:
+              'Secure admin action failed. Check Edge Function deployment and secrets.',
+          code: 'admin_function_failed',
+        ),
+      );
+    }
   }
 
   Result<T> _academicWritesDisabled<T>(String feature) {

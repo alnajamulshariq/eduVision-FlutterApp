@@ -1,7 +1,10 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
+import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
 import 'package:eduvision_app/core/widgets/primary_button.dart';
 import 'package:eduvision_app/data/models/admin_management_model.dart';
+import 'package:eduvision_app/data/models/department_model.dart';
+import 'package:eduvision_app/data/models/semester_model.dart';
 import 'package:eduvision_app/features/admin/providers/admin_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 const _roles = ['Student', 'Teacher', 'Admin'];
 const _fallbackDepartments = ['Manual setup'];
 const _fallbackBatches = ['Manual setup'];
+const _fallbackSemesters = ['Manual setup'];
 
 class AdminUsersScreen extends ConsumerStatefulWidget {
   const AdminUsersScreen({super.key});
@@ -20,22 +24,241 @@ class AdminUsersScreen extends ConsumerStatefulWidget {
 class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _profileIdController = TextEditingController();
+  final _parentEmailController = TextEditingController();
   String _role = _roles.first;
   String _department = _fallbackDepartments.first;
   String _batch = _fallbackBatches.first;
+  String _semester = _fallbackSemesters.first;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _passwordController.dispose();
+    _profileIdController.dispose();
+    _parentEmailController.dispose();
     super.dispose();
   }
 
-  void _showSecureBackendNotice() {
+  void _showCreateHint(String role) {
+    setState(() => _role = role);
     showModuleSnackBar(
       context,
-      'User creation and password reset need a secure backend function.',
+      'Use the Create User form below to create a ${role.toLowerCase()} account.',
     );
+  }
+
+  Future<void> _createUser(AcademicOverviewModel? academicOverview) async {
+    if (_isSubmitting) {
+      return;
+    }
+
+    final role = _role.toLowerCase();
+    final department = _findDepartment(academicOverview, _department);
+    final batch = _findBatch(academicOverview, _batch);
+    final semester = _findSemester(academicOverview, _semester);
+    final profileId = _profileIdController.text.trim();
+
+    final validation = _validateCreateUserForm(
+      role: role,
+      name: _nameController.text,
+      email: _emailController.text,
+      temporaryPassword: _passwordController.text,
+      departmentId: department?.id,
+      batchId: batch?.id,
+      semesterId: semester?.id,
+      profileId: profileId,
+    );
+
+    if (validation != null) {
+      showModuleSnackBar(context, validation);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final result = await ref
+        .read(adminRepositoryProvider)
+        .createUserAccount(
+          request: AdminCreateUserRequestModel(
+            name: _nameController.text,
+            universityEmail: _emailController.text,
+            role: role,
+            temporaryPassword: _passwordController.text,
+            rollNo: role == 'student' ? profileId : null,
+            employeeId: role == 'teacher' ? profileId : null,
+            departmentId: role == 'student' || role == 'teacher'
+                ? department?.id
+                : null,
+            batchId: role == 'student' ? batch?.id : null,
+            semesterId: role == 'student' ? semester?.id : null,
+            parentEmail: role == 'student' ? _parentEmailController.text : null,
+          ),
+        );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _isSubmitting = false);
+
+    if (result case Failure<AdminWriteResultModel>(:final exception)) {
+      showModuleSnackBar(context, exception.message);
+      return;
+    }
+
+    if (result case Success<AdminWriteResultModel>(:final data)) {
+      showModuleSnackBar(context, data.message);
+
+      if (data.success) {
+        _nameController.clear();
+        _emailController.clear();
+        _passwordController.clear();
+        _profileIdController.clear();
+        _parentEmailController.clear();
+        ref.invalidate(adminUsersOverviewProvider);
+        ref.invalidate(adminAcademicOverviewProvider);
+      }
+    }
+  }
+
+  Future<void> _showResetPasswordDialog(
+    List<AdminUserProfileModel> users,
+  ) async {
+    if (users.isEmpty) {
+      showModuleSnackBar(context, 'No users are available for password reset.');
+      return;
+    }
+
+    final passwordController = TextEditingController();
+    var selectedUserId = users.first.id;
+    var isSubmitting = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final colorScheme = Theme.of(context).colorScheme;
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SectionTitle(
+                      title: 'Reset Password',
+                      icon: Icons.lock_reset_rounded,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedUserId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'User',
+                        prefixIcon: Icon(Icons.person_rounded),
+                      ),
+                      items: [
+                        for (final user in users)
+                          DropdownMenuItem<String>(
+                            value: user.id,
+                            child: Text(
+                              '${user.name} - ${user.universityEmail}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: isSubmitting
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setSheetState(() => selectedUserId = value);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'New Temporary Password',
+                        prefixIcon: Icon(Icons.password_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Password reset runs through a secure Edge Function.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    PrimaryButton(
+                      label: 'Set Temporary Password',
+                      icon: Icons.lock_reset_rounded,
+                      isLoading: isSubmitting,
+                      minHeight: 48,
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              if (passwordController.text.length < 6) {
+                                showModuleSnackBar(
+                                  context,
+                                  'Temporary password must be at least 6 characters.',
+                                );
+                                return;
+                              }
+
+                              setSheetState(() => isSubmitting = true);
+                              final result = await ref
+                                  .read(adminRepositoryProvider)
+                                  .resetUserPassword(
+                                    request: AdminResetPasswordRequestModel(
+                                      userId: selectedUserId,
+                                      temporaryPassword:
+                                          passwordController.text,
+                                    ),
+                                  );
+
+                              if (!context.mounted) {
+                                return;
+                              }
+
+                              if (result case Failure<AdminWriteResultModel>(
+                                :final exception,
+                              )) {
+                                setSheetState(() => isSubmitting = false);
+                                showModuleSnackBar(context, exception.message);
+                                return;
+                              }
+
+                              if (result case Success<AdminWriteResultModel>(
+                                :final data,
+                              )) {
+                                showModuleSnackBar(context, data.message);
+                                ref.invalidate(adminUsersOverviewProvider);
+                                Navigator.of(context).pop();
+                              }
+                            },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    passwordController.dispose();
   }
 
   @override
@@ -56,12 +279,27 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
           .toList(),
       orElse: () => _fallbackBatches,
     );
+    final semesterOptions = academicAsync.maybeWhen(
+      data: (overview) => overview.semesters
+          .map((semester) => semester.name)
+          .where((name) => name.trim().isNotEmpty)
+          .toList(),
+      orElse: () => _fallbackSemesters,
+    );
     final safeDepartments = departmentOptions.isEmpty
         ? _fallbackDepartments
         : departmentOptions;
     final safeBatches = batchOptions.isEmpty ? _fallbackBatches : batchOptions;
+    final safeSemesters = semesterOptions.isEmpty
+        ? _fallbackSemesters
+        : semesterOptions;
     final selectedDepartment = _safeSelection(safeDepartments, _department);
     final selectedBatch = _safeSelection(safeBatches, _batch);
+    final selectedSemester = _safeSelection(safeSemesters, _semester);
+    final academicOverview = academicAsync.maybeWhen(
+      data: (overview) => overview,
+      orElse: () => null,
+    );
 
     return ModuleScreenShell(
       title: 'User Management',
@@ -79,20 +317,30 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
           ],
           data: (overview) => <Widget>[
             _UserSummaryCard(overview: overview),
-            _QuickActionsCard(onAction: _showSecureBackendNotice),
+            _QuickActionsCard(
+              onCreateRole: _showCreateHint,
+              onResetPassword: () => _showResetPasswordDialog(overview.users),
+            ),
             _AddUserPreviewForm(
               nameController: _nameController,
               emailController: _emailController,
+              passwordController: _passwordController,
+              profileIdController: _profileIdController,
+              parentEmailController: _parentEmailController,
               role: _role,
               department: selectedDepartment,
               batch: selectedBatch,
+              semester: selectedSemester,
               departmentOptions: safeDepartments,
               batchOptions: safeBatches,
+              semesterOptions: safeSemesters,
+              isSubmitting: _isSubmitting,
               onRoleChanged: (value) => setState(() => _role = value),
               onDepartmentChanged: (value) =>
                   setState(() => _department = value),
               onBatchChanged: (value) => setState(() => _batch = value),
-              onCreatePreview: _showSecureBackendNotice,
+              onSemesterChanged: (value) => setState(() => _semester = value),
+              onCreateUser: () => _createUser(academicOverview),
             ),
             _RecentUsersList(users: overview.users),
           ],
@@ -172,9 +420,13 @@ class _UserSummaryCard extends StatelessWidget {
 }
 
 class _QuickActionsCard extends StatelessWidget {
-  const _QuickActionsCard({required this.onAction});
+  const _QuickActionsCard({
+    required this.onCreateRole,
+    required this.onResetPassword,
+  });
 
-  final VoidCallback onAction;
+  final ValueChanged<String> onCreateRole;
+  final VoidCallback onResetPassword;
 
   @override
   Widget build(BuildContext context) {
@@ -192,22 +444,22 @@ class _QuickActionsCard extends StatelessWidget {
               _ActionButton(
                 label: 'Add Student',
                 icon: Icons.person_add_alt_1_rounded,
-                onPressed: onAction,
+                onPressed: () => onCreateRole('Student'),
               ),
               _ActionButton(
                 label: 'Add Teacher',
                 icon: Icons.co_present_rounded,
-                onPressed: onAction,
+                onPressed: () => onCreateRole('Teacher'),
               ),
               _ActionButton(
                 label: 'Add Admin',
                 icon: Icons.admin_panel_settings_rounded,
-                onPressed: onAction,
+                onPressed: () => onCreateRole('Admin'),
               ),
               _ActionButton(
                 label: 'Reset Password',
                 icon: Icons.lock_reset_rounded,
-                onPressed: onAction,
+                onPressed: onResetPassword,
               ),
             ],
           ),
@@ -223,32 +475,52 @@ class _AddUserPreviewForm extends StatelessWidget {
   const _AddUserPreviewForm({
     required this.nameController,
     required this.emailController,
+    required this.passwordController,
+    required this.profileIdController,
+    required this.parentEmailController,
     required this.role,
     required this.department,
     required this.batch,
+    required this.semester,
     required this.departmentOptions,
     required this.batchOptions,
+    required this.semesterOptions,
+    required this.isSubmitting,
     required this.onRoleChanged,
     required this.onDepartmentChanged,
     required this.onBatchChanged,
-    required this.onCreatePreview,
+    required this.onSemesterChanged,
+    required this.onCreateUser,
   });
 
   final TextEditingController nameController;
   final TextEditingController emailController;
+  final TextEditingController passwordController;
+  final TextEditingController profileIdController;
+  final TextEditingController parentEmailController;
   final String role;
   final String department;
   final String batch;
+  final String semester;
   final List<String> departmentOptions;
   final List<String> batchOptions;
+  final List<String> semesterOptions;
+  final bool isSubmitting;
   final ValueChanged<String> onRoleChanged;
   final ValueChanged<String> onDepartmentChanged;
   final ValueChanged<String> onBatchChanged;
-  final VoidCallback onCreatePreview;
+  final ValueChanged<String> onSemesterChanged;
+  final VoidCallback onCreateUser;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final normalizedRole = role.toLowerCase();
+    final needsProfileId =
+        normalizedRole == 'student' || normalizedRole == 'teacher';
+    final profileLabel = normalizedRole == 'teacher'
+        ? 'Employee ID'
+        : 'Roll Number';
 
     return ModulePanel(
       padding: const EdgeInsets.all(14),
@@ -279,6 +551,16 @@ class _AddUserPreviewForm extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
+          TextField(
+            controller: passwordController,
+            obscureText: true,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Temporary Password',
+              prefixIcon: Icon(Icons.password_rounded),
+            ),
+          ),
+          const SizedBox(height: 10),
           _DropdownTile(
             label: 'Role',
             icon: Icons.badge_rounded,
@@ -286,33 +568,65 @@ class _AddUserPreviewForm extends StatelessWidget {
             values: _roles,
             onChanged: onRoleChanged,
           ),
-          const SizedBox(height: 10),
-          _DropdownTile(
-            label: 'Department',
-            icon: Icons.account_tree_rounded,
-            value: department,
-            values: departmentOptions,
-            onChanged: onDepartmentChanged,
-          ),
-          const SizedBox(height: 10),
-          _DropdownTile(
-            label: 'Batch',
-            icon: Icons.groups_rounded,
-            value: batch,
-            values: batchOptions,
-            onChanged: onBatchChanged,
-          ),
+          if (needsProfileId) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: profileIdController,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: profileLabel,
+                prefixIcon: const Icon(Icons.badge_rounded),
+              ),
+            ),
+            const SizedBox(height: 10),
+            _DropdownTile(
+              label: 'Department',
+              icon: Icons.account_tree_rounded,
+              value: department,
+              values: departmentOptions,
+              onChanged: onDepartmentChanged,
+            ),
+          ],
+          if (normalizedRole == 'student') ...[
+            const SizedBox(height: 10),
+            _DropdownTile(
+              label: 'Batch',
+              icon: Icons.groups_rounded,
+              value: batch,
+              values: batchOptions,
+              onChanged: onBatchChanged,
+            ),
+            const SizedBox(height: 10),
+            _DropdownTile(
+              label: 'Semester',
+              icon: Icons.layers_rounded,
+              value: semester,
+              values: semesterOptions,
+              onChanged: onSemesterChanged,
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: parentEmailController,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: 'Parent Email',
+                prefixIcon: Icon(Icons.contact_mail_rounded),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           PrimaryButton(
-            label: 'Plan User Creation',
+            label: 'Create User',
             icon: Icons.person_add_rounded,
+            isLoading: isSubmitting,
             minHeight: 48,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            onPressed: onCreatePreview,
+            onPressed: isSubmitting ? null : onCreateUser,
           ),
           const SizedBox(height: 10),
           Text(
-            'This screen does not create Auth users from the mobile client.',
+            'Auth user creation runs through a secure Edge Function.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
               height: 1.35,
@@ -806,6 +1120,95 @@ String _display(String? value, String fallback) {
   }
 
   return fallback;
+}
+
+String? _validateCreateUserForm({
+  required String role,
+  required String name,
+  required String email,
+  required String temporaryPassword,
+  required String? departmentId,
+  required String? batchId,
+  required String? semesterId,
+  required String profileId,
+}) {
+  if (name.trim().isEmpty || email.trim().isEmpty) {
+    return 'Enter the full name and university email.';
+  }
+
+  if (temporaryPassword.length < 6) {
+    return 'Temporary password must be at least 6 characters.';
+  }
+
+  if (role != 'student' && role != 'teacher' && role != 'admin') {
+    return 'Choose a valid user role.';
+  }
+
+  if (role != 'admin' && (departmentId == null || departmentId.isEmpty)) {
+    return 'Choose a department for this user.';
+  }
+
+  if (role == 'student') {
+    if (profileId.isEmpty) {
+      return 'Enter the student roll number.';
+    }
+
+    if (batchId == null || batchId.isEmpty) {
+      return 'Choose a batch for this student.';
+    }
+
+    if (semesterId == null || semesterId.isEmpty) {
+      return 'Choose a semester for this student.';
+    }
+  }
+
+  if (role == 'teacher' && profileId.isEmpty) {
+    return 'Enter the teacher employee ID.';
+  }
+
+  return null;
+}
+
+DepartmentModel? _findDepartment(AcademicOverviewModel? overview, String name) {
+  if (overview == null) {
+    return null;
+  }
+
+  for (final department in overview.departments) {
+    if (department.name == name) {
+      return department;
+    }
+  }
+
+  return null;
+}
+
+BatchSummaryModel? _findBatch(AcademicOverviewModel? overview, String name) {
+  if (overview == null) {
+    return null;
+  }
+
+  for (final batch in overview.batches) {
+    if (batch.name == name) {
+      return batch;
+    }
+  }
+
+  return null;
+}
+
+SemesterModel? _findSemester(AcademicOverviewModel? overview, String name) {
+  if (overview == null) {
+    return null;
+  }
+
+  for (final semester in overview.semesters) {
+    if (semester.name == name) {
+      return semester;
+    }
+  }
+
+  return null;
 }
 
 String _cleanErrorMessage(Object error) {

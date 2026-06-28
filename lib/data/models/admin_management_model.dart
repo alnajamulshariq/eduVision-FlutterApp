@@ -311,6 +311,98 @@ class StudentEnrollmentSummaryModel {
   }
 }
 
+class AdminWriteResultModel {
+  const AdminWriteResultModel({
+    required this.success,
+    required this.message,
+    this.createdUserId,
+    this.recordId,
+  });
+
+  final bool success;
+  final String message;
+  final String? createdUserId;
+  final String? recordId;
+
+  factory AdminWriteResultModel.fromJson(Map<String, dynamic> json) {
+    return AdminWriteResultModel(
+      success: json['success'] == true,
+      message: _textOrFallback(json['message'], 'Admin write completed.'),
+      createdUserId: _textOrNull(json['createdUserId']),
+      recordId: _textOrNull(json['recordId']),
+    );
+  }
+}
+
+class AdminCreateUserRequestModel {
+  const AdminCreateUserRequestModel({
+    required this.name,
+    required this.universityEmail,
+    required this.role,
+    required this.temporaryPassword,
+    this.rollNo,
+    this.employeeId,
+    this.departmentId,
+    this.batchId,
+    this.semesterId,
+    this.parentEmail,
+  });
+
+  final String name;
+  final String universityEmail;
+  final String role;
+  final String temporaryPassword;
+  final String? rollNo;
+  final String? employeeId;
+  final String? departmentId;
+  final String? batchId;
+  final String? semesterId;
+  final String? parentEmail;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name.trim(),
+      'universityEmail': universityEmail.trim().toLowerCase(),
+      'role': role.trim().toLowerCase(),
+      'temporaryPassword': temporaryPassword,
+      if (_hasText(rollNo)) 'rollNo': rollNo!.trim(),
+      if (_hasText(employeeId)) 'employeeId': employeeId!.trim(),
+      if (_hasText(departmentId)) 'departmentId': departmentId!.trim(),
+      if (_hasText(batchId)) 'batchId': batchId!.trim(),
+      if (_hasText(semesterId)) 'semesterId': semesterId!.trim(),
+      if (_hasText(parentEmail)) 'parentEmail': parentEmail!.trim(),
+    };
+  }
+}
+
+class AdminResetPasswordRequestModel {
+  const AdminResetPasswordRequestModel({
+    required this.userId,
+    required this.temporaryPassword,
+  });
+
+  final String userId;
+  final String temporaryPassword;
+
+  Map<String, dynamic> toJson() {
+    return {'userId': userId.trim(), 'temporaryPassword': temporaryPassword};
+  }
+}
+
+class AdminAcademicWriteRequestModel {
+  const AdminAcademicWriteRequestModel({
+    required this.operation,
+    required this.payload,
+  });
+
+  final String operation;
+  final Map<String, dynamic> payload;
+
+  Map<String, dynamic> toJson() {
+    return {'operation': operation, 'payload': payload};
+  }
+}
+
 Map<String, dynamic>? _mapOrNull(dynamic value) {
   if (value is Map<String, dynamic>) {
     return value;
@@ -332,6 +424,25 @@ String? _nestedName(Map<String, dynamic>? source, String key) {
   }
 
   return name.trim();
+}
+
+bool _hasText(String? value) {
+  return value != null && value.trim().isNotEmpty;
+}
+
+String _textOrFallback(dynamic value, String fallback) {
+  final text = _textOrNull(value);
+  return text ?? fallback;
+}
+
+String? _textOrNull(dynamic value) {
+  final text = value?.toString().trim();
+
+  if (text == null || text.isEmpty) {
+    return null;
+  }
+
+  return text;
 }
 
 String _titleCase(String value) {

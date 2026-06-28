@@ -1,5 +1,8 @@
 import 'package:eduvision_app/core/constants/app_constants.dart';
+import 'package:eduvision_app/core/errors/app_exception.dart';
+import 'package:eduvision_app/core/utils/result.dart';
 import 'package:eduvision_app/core/widgets/module_screen_shell.dart';
+import 'package:eduvision_app/core/widgets/primary_button.dart';
 import 'package:eduvision_app/data/models/admin_management_model.dart';
 import 'package:eduvision_app/data/models/department_model.dart';
 import 'package:eduvision_app/features/admin/providers/admin_provider.dart';
@@ -43,10 +46,17 @@ class AdminAcademicsScreen extends ConsumerWidget {
             _SubjectAssignmentCard(overview: overview),
             const _AssignmentFlowCard(steps: _assignmentSteps),
             _AcademicQuickActions(
-              onAction: () => showModuleSnackBar(
-                context,
-                'Academic write actions need admin RLS or a secure backend function.',
-              ),
+              onCreateDepartment: () =>
+                  _showCreateDepartmentDialog(context, ref),
+              onCreateBatch: () =>
+                  _showCreateBatchDialog(context, ref, overview: overview),
+              onCreateSemester: () => _showCreateSemesterDialog(context, ref),
+              onCreateSubject: () =>
+                  _showCreateSubjectDialog(context, ref, overview: overview),
+              onAssignTeacher: () =>
+                  _showAssignTeacherDialog(context, ref, overview: overview),
+              onEnrollStudent: () =>
+                  _showEnrollStudentDialog(context, ref, overview: overview),
             ),
           ],
         ),
@@ -418,9 +428,21 @@ class _AssignmentFlowCard extends StatelessWidget {
 }
 
 class _AcademicQuickActions extends StatelessWidget {
-  const _AcademicQuickActions({required this.onAction});
+  const _AcademicQuickActions({
+    required this.onCreateDepartment,
+    required this.onCreateBatch,
+    required this.onCreateSemester,
+    required this.onCreateSubject,
+    required this.onAssignTeacher,
+    required this.onEnrollStudent,
+  });
 
-  final VoidCallback onAction;
+  final VoidCallback onCreateDepartment;
+  final VoidCallback onCreateBatch;
+  final VoidCallback onCreateSemester;
+  final VoidCallback onCreateSubject;
+  final VoidCallback onAssignTeacher;
+  final VoidCallback onEnrollStudent;
 
   @override
   Widget build(BuildContext context) {
@@ -438,27 +460,32 @@ class _AcademicQuickActions extends StatelessWidget {
               _ActionButton(
                 label: 'Add Department',
                 icon: Icons.account_tree_rounded,
-                onPressed: onAction,
+                onPressed: onCreateDepartment,
               ),
               _ActionButton(
                 label: 'Add Batch',
                 icon: Icons.groups_rounded,
-                onPressed: onAction,
+                onPressed: onCreateBatch,
+              ),
+              _ActionButton(
+                label: 'Add Semester',
+                icon: Icons.layers_rounded,
+                onPressed: onCreateSemester,
               ),
               _ActionButton(
                 label: 'Add Subject',
                 icon: Icons.menu_book_rounded,
-                onPressed: onAction,
+                onPressed: onCreateSubject,
               ),
               _ActionButton(
                 label: 'Assign Teacher',
                 icon: Icons.assignment_ind_rounded,
-                onPressed: onAction,
+                onPressed: onAssignTeacher,
               ),
               _ActionButton(
                 label: 'Enroll Students',
                 icon: Icons.how_to_reg_rounded,
-                onPressed: onAction,
+                onPressed: onEnrollStudent,
               ),
             ],
           ),
@@ -685,11 +712,606 @@ class _AcademicWriteNotice extends StatelessWidget {
     return ModuleInfoTile(
       title: 'Create and assignment actions are manual for now',
       subtitle:
-          'The current Supabase client is read-only for academic setup. Writes need safe admin RLS or a secure backend function.',
+          'Academic writes run through secure Edge Functions, not directly through the Flutter anon client.',
       icon: Icons.admin_panel_settings_rounded,
       color: colorScheme.tertiary,
     );
   }
+}
+
+Future<void> _showCreateDepartmentDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final nameController = TextEditingController();
+  final codeController = TextEditingController();
+
+  await _showAcademicSheet(
+    context: context,
+    title: 'Create Department',
+    icon: Icons.account_tree_rounded,
+    fields: [
+      TextField(
+        controller: nameController,
+        textInputAction: TextInputAction.next,
+        decoration: const InputDecoration(
+          labelText: 'Department Name',
+          prefixIcon: Icon(Icons.account_tree_rounded),
+        ),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: codeController,
+        textCapitalization: TextCapitalization.characters,
+        decoration: const InputDecoration(
+          labelText: 'Department Code',
+          prefixIcon: Icon(Icons.tag_rounded),
+        ),
+      ),
+    ],
+    onSubmit: () => ref
+        .read(adminRepositoryProvider)
+        .createDepartmentSecure(
+          name: nameController.text,
+          code: codeController.text,
+        ),
+  );
+
+  nameController.dispose();
+  codeController.dispose();
+}
+
+Future<void> _showCreateBatchDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required AcademicOverviewModel overview,
+}) async {
+  if (overview.departments.isEmpty) {
+    showModuleSnackBar(context, 'Create a department before adding batches.');
+    return;
+  }
+
+  final nameController = TextEditingController();
+  final yearController = TextEditingController();
+  var departmentId = overview.departments.first.id;
+
+  await _showAcademicSheet(
+    context: context,
+    title: 'Create Batch',
+    icon: Icons.groups_rounded,
+    fieldsBuilder: (setSheetState, isSubmitting) => [
+      TextField(
+        controller: nameController,
+        textInputAction: TextInputAction.next,
+        decoration: const InputDecoration(
+          labelText: 'Batch Name',
+          prefixIcon: Icon(Icons.groups_rounded),
+        ),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: yearController,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.next,
+        decoration: const InputDecoration(
+          labelText: 'Year',
+          prefixIcon: Icon(Icons.calendar_month_rounded),
+        ),
+      ),
+      const SizedBox(height: 10),
+      _IdDropdown(
+        label: 'Department',
+        icon: Icons.account_tree_rounded,
+        value: departmentId,
+        items: {
+          for (final department in overview.departments)
+            department.id: department.name,
+        },
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => departmentId = value),
+      ),
+    ],
+    onSubmit: () {
+      final year = int.tryParse(yearController.text.trim());
+      if (year == null) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message: 'Enter a valid batch year.',
+              code: 'invalid_batch_year',
+            ),
+          ),
+        );
+      }
+
+      return ref
+          .read(adminRepositoryProvider)
+          .createBatchSecure(
+            name: nameController.text,
+            year: year,
+            departmentId: departmentId,
+          );
+    },
+  );
+
+  nameController.dispose();
+  yearController.dispose();
+}
+
+Future<void> _showCreateSemesterDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final nameController = TextEditingController();
+  final numberController = TextEditingController();
+
+  await _showAcademicSheet(
+    context: context,
+    title: 'Create Semester',
+    icon: Icons.layers_rounded,
+    fields: [
+      TextField(
+        controller: nameController,
+        textInputAction: TextInputAction.next,
+        decoration: const InputDecoration(
+          labelText: 'Semester Name',
+          prefixIcon: Icon(Icons.layers_rounded),
+        ),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: numberController,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Semester Number',
+          prefixIcon: Icon(Icons.onetwothree_rounded),
+        ),
+      ),
+    ],
+    onSubmit: () {
+      final number = int.tryParse(numberController.text.trim());
+      if (number == null) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message: 'Enter a valid semester number.',
+              code: 'invalid_semester_number',
+            ),
+          ),
+        );
+      }
+
+      return ref
+          .read(adminRepositoryProvider)
+          .createSemesterSecure(name: nameController.text, number: number);
+    },
+  );
+
+  nameController.dispose();
+  numberController.dispose();
+}
+
+Future<void> _showCreateSubjectDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required AcademicOverviewModel overview,
+}) async {
+  if (overview.departments.isEmpty || overview.semesters.isEmpty) {
+    showModuleSnackBar(
+      context,
+      'Create departments and semesters before adding subjects.',
+    );
+    return;
+  }
+
+  final nameController = TextEditingController();
+  final codeController = TextEditingController();
+  var departmentId = overview.departments.first.id;
+  var semesterId = overview.semesters.first.id;
+
+  await _showAcademicSheet(
+    context: context,
+    title: 'Create Subject',
+    icon: Icons.menu_book_rounded,
+    fieldsBuilder: (setSheetState, isSubmitting) => [
+      TextField(
+        controller: nameController,
+        textInputAction: TextInputAction.next,
+        decoration: const InputDecoration(
+          labelText: 'Subject Name',
+          prefixIcon: Icon(Icons.menu_book_rounded),
+        ),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: codeController,
+        textInputAction: TextInputAction.next,
+        textCapitalization: TextCapitalization.characters,
+        decoration: const InputDecoration(
+          labelText: 'Subject Code',
+          prefixIcon: Icon(Icons.tag_rounded),
+        ),
+      ),
+      const SizedBox(height: 10),
+      _IdDropdown(
+        label: 'Department',
+        icon: Icons.account_tree_rounded,
+        value: departmentId,
+        items: {
+          for (final department in overview.departments)
+            department.id: department.name,
+        },
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => departmentId = value),
+      ),
+      const SizedBox(height: 10),
+      _IdDropdown(
+        label: 'Semester',
+        icon: Icons.layers_rounded,
+        value: semesterId,
+        items: {
+          for (final semester in overview.semesters) semester.id: semester.name,
+        },
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => semesterId = value),
+      ),
+    ],
+    onSubmit: () => ref
+        .read(adminRepositoryProvider)
+        .createSubjectSecure(
+          name: nameController.text,
+          code: codeController.text,
+          departmentId: departmentId,
+          semesterId: semesterId,
+        ),
+  );
+
+  nameController.dispose();
+  codeController.dispose();
+}
+
+Future<void> _showAssignTeacherDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required AcademicOverviewModel overview,
+}) async {
+  if (overview.teachers.isEmpty ||
+      overview.subjects.isEmpty ||
+      overview.batches.isEmpty) {
+    showModuleSnackBar(
+      context,
+      'Teachers, subjects, and batches are required before assignment.',
+    );
+    return;
+  }
+
+  var teacherId = overview.teachers.first.id;
+  var subjectId = overview.subjects.first.id;
+  var batchId = overview.batches.first.id;
+
+  await _showAcademicSheet(
+    context: context,
+    title: 'Assign Teacher',
+    icon: Icons.assignment_ind_rounded,
+    fieldsBuilder: (setSheetState, isSubmitting) => [
+      _IdDropdown(
+        label: 'Teacher',
+        icon: Icons.co_present_rounded,
+        value: teacherId,
+        items: {
+          for (final teacher in overview.teachers)
+            teacher.id: '${teacher.name} - ${teacher.employeeId}',
+        },
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => teacherId = value),
+      ),
+      const SizedBox(height: 10),
+      _IdDropdown(
+        label: 'Subject',
+        icon: Icons.menu_book_rounded,
+        value: subjectId,
+        items: {
+          for (final subject in overview.subjects)
+            subject.id: '${subject.name} - ${subject.code}',
+        },
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => subjectId = value),
+      ),
+      const SizedBox(height: 10),
+      _IdDropdown(
+        label: 'Batch',
+        icon: Icons.groups_rounded,
+        value: batchId,
+        items: {for (final batch in overview.batches) batch.id: batch.name},
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => batchId = value),
+      ),
+    ],
+    onSubmit: () {
+      final subject = _subjectById(overview, subjectId);
+      final batch = _batchById(overview, batchId);
+
+      if (subject == null || batch == null) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message: 'Choose a valid subject and batch.',
+              code: 'invalid_assignment_selection',
+            ),
+          ),
+        );
+      }
+
+      return ref
+          .read(adminRepositoryProvider)
+          .assignTeacherSecure(
+            teacherId: teacherId,
+            subjectId: subjectId,
+            departmentId: subject.departmentId,
+            batchId: batchId,
+            semesterId: subject.semesterId,
+          );
+    },
+  );
+}
+
+Future<void> _showEnrollStudentDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required AcademicOverviewModel overview,
+}) async {
+  if (overview.students.isEmpty || overview.subjects.isEmpty) {
+    showModuleSnackBar(
+      context,
+      'Students and subjects are required before enrollment.',
+    );
+    return;
+  }
+
+  var studentId = overview.students.first.id;
+  var subjectId = overview.subjects.first.id;
+
+  await _showAcademicSheet(
+    context: context,
+    title: 'Enroll Student',
+    icon: Icons.how_to_reg_rounded,
+    fieldsBuilder: (setSheetState, isSubmitting) => [
+      _IdDropdown(
+        label: 'Student',
+        icon: Icons.school_rounded,
+        value: studentId,
+        items: {
+          for (final student in overview.students)
+            student.id: '${student.name} - ${student.rollNo}',
+        },
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => studentId = value),
+      ),
+      const SizedBox(height: 10),
+      _IdDropdown(
+        label: 'Subject',
+        icon: Icons.menu_book_rounded,
+        value: subjectId,
+        items: {
+          for (final subject in overview.subjects)
+            subject.id: '${subject.name} - ${subject.code}',
+        },
+        onChanged: isSubmitting
+            ? null
+            : (value) => setSheetState(() => subjectId = value),
+      ),
+    ],
+    onSubmit: () {
+      final student = _studentById(overview, studentId);
+      final subject = _subjectById(overview, subjectId);
+
+      if (student == null || subject == null) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message: 'Choose a valid student and subject.',
+              code: 'invalid_enrollment_selection',
+            ),
+          ),
+        );
+      }
+
+      return ref
+          .read(adminRepositoryProvider)
+          .enrollStudentSecure(
+            studentId: studentId,
+            subjectId: subjectId,
+            departmentId: subject.departmentId,
+            batchId: student.batchId,
+            semesterId: subject.semesterId,
+          );
+    },
+  );
+}
+
+Future<void> _showAcademicSheet({
+  required BuildContext context,
+  required String title,
+  required IconData icon,
+  required Future<Result<AdminWriteResultModel>> Function() onSubmit,
+  List<Widget>? fields,
+  List<Widget> Function(StateSetter setSheetState, bool isSubmitting)?
+  fieldsBuilder,
+}) async {
+  var isSubmitting = false;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setSheetState) {
+          final colorScheme = Theme.of(context).colorScheme;
+          final children =
+              fieldsBuilder?.call(setSheetState, isSubmitting) ??
+              fields ??
+              const <Widget>[];
+
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                18 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionTitle(title: title, icon: icon),
+                    const SizedBox(height: 12),
+                    ...children,
+                    const SizedBox(height: 12),
+                    Text(
+                      'This write runs through a secure Edge Function.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    PrimaryButton(
+                      label: title,
+                      icon: icon,
+                      isLoading: isSubmitting,
+                      minHeight: 48,
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              setSheetState(() => isSubmitting = true);
+                              final result = await onSubmit();
+
+                              if (!context.mounted) {
+                                return;
+                              }
+
+                              if (result case Failure<AdminWriteResultModel>(
+                                :final exception,
+                              )) {
+                                setSheetState(() => isSubmitting = false);
+                                showModuleSnackBar(context, exception.message);
+                                return;
+                              }
+
+                              if (result case Success<AdminWriteResultModel>(
+                                :final data,
+                              )) {
+                                showModuleSnackBar(context, data.message);
+
+                                if (data.success) {
+                                  Navigator.of(context).pop();
+                                } else {
+                                  setSheetState(() => isSubmitting = false);
+                                }
+                              }
+                            },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  if (context.mounted) {
+    ProviderScope.containerOf(
+      context,
+    ).invalidate(adminAcademicOverviewProvider);
+  }
+}
+
+class _IdDropdown extends StatelessWidget {
+  const _IdDropdown({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final String label;
+  final IconData icon;
+  final String value;
+  final Map<String, String> items;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
+      items: [
+        for (final item in items.entries)
+          DropdownMenuItem<String>(
+            value: item.key,
+            child: Text(item.value, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: onChanged == null
+          ? null
+          : (value) {
+              if (value != null) {
+                onChanged!(value);
+              }
+            },
+    );
+  }
+}
+
+SubjectSummaryModel? _subjectById(
+  AcademicOverviewModel overview,
+  String subjectId,
+) {
+  for (final subject in overview.subjects) {
+    if (subject.id == subjectId) {
+      return subject;
+    }
+  }
+
+  return null;
+}
+
+BatchSummaryModel? _batchById(AcademicOverviewModel overview, String batchId) {
+  for (final batch in overview.batches) {
+    if (batch.id == batchId) {
+      return batch;
+    }
+  }
+
+  return null;
+}
+
+AdminStudentProfileModel? _studentById(
+  AcademicOverviewModel overview,
+  String studentId,
+) {
+  for (final student in overview.students) {
+    if (student.id == studentId) {
+      return student;
+    }
+  }
+
+  return null;
 }
 
 String _display(String? value, String fallback) {
