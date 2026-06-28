@@ -1,84 +1,75 @@
-# Supabase Planning
+# EduVision Supabase Backend Setup
 
-This folder contains the future Supabase database planning files for EduVision. The Flutter app is still using mock frontend data and is not connected to Supabase yet.
+This folder contains the SQL setup files and Edge Function source used by the
+EduVision Flutter backend.
 
-## Files
+## File Order
 
-- `schema.sql` defines the draft tables, constraints, relationships, indexes, and `updated_at` trigger pattern.
-- `seed_data.sql` contains safe demo records that mirror the current frontend preview data.
-- `rls_policies.md` describes the intended Row Level Security rules before production policies are written.
-
-## How This Will Be Used Later
-
-When the real Supabase project is created, `schema.sql` can be reviewed, adjusted, and applied in the Supabase SQL editor or migration workflow. After that, `seed_data.sql` can be refined and used to load a small demo dataset for testing.
-
-RLS policies should be finalized before production data is used. The current RLS file is a planning document, not a final security implementation.
-
-## Security Notes
-
-- Do not commit real Supabase credentials.
-- Do not commit `.env` values.
-- Do not connect production data until RLS and auth flows are reviewed.
-- Parent email notifications, sender reveal, and admin password reset should be handled server-side later.
-
-## Current App Status
-
-Supabase integration is planned but not connected yet. The premium Flutter demo screens, mock data, repository stubs, and service stubs remain unchanged.
-
-
-## EduVision Supabase Backend Setup
-
-This folder contains the SQL setup files required for the EduVision Flutter backend.
-
-### File Order
-
-Run the SQL files in this order inside the Supabase SQL Editor:
+Run SQL files in this order inside the Supabase SQL Editor or migration
+workflow:
 
 1. `schema.sql`
 2. `rls_policies.sql`
-3. `seed_data.sql`
+3. `seed_data.sql` if demo seed data is needed
 
-### Current Backend Status
+## Current Backend Status
 
-The Supabase backend has been configured for the Android backend testing phase.
+Completed in the repository:
 
-Completed:
+- Database schema for auth profiles, academics, attendance, gate logs,
+  anonymous messages, message reports, and system activity logs
+- Row Level Security policy SQL with helper role functions
+- Secure admin write Edge Functions
+- Parent gate email Edge Function
+- Face Recognition API Flutter contract and optional Python demo scaffold
+- Android backend testing support through Flutter dart-defines
 
-- Database schema created
-- Row Level Security enabled
-- Helper functions added for role checks
-- Grants added for authenticated users
-- RLS policies added for app users, academics, attendance, gate logs, anonymous messages, message reports, and system activity logs
-- Demo auth users created manually in Supabase Auth
-- `app_users` profiles linked with real Supabase Auth user IDs
-- Demo academic data inserted
-- Real login tested successfully on Android emulator
+Deployment still needs to be performed manually against the target Supabase
+project.
 
-Verified roles:
+## Required Edge Functions
 
-- Admin opens Admin dashboard
-- Teacher opens Teacher dashboard
-- Student opens Student dashboard
+```bash
+supabase functions deploy send-parent-gate-email
+supabase functions deploy admin-create-user
+supabase functions deploy admin-reset-password
+supabase functions deploy admin-academic-write
+```
 
-### Important Security Notes
+## Required Function Secrets
 
-Do not commit `.env`, `.env.local`, publishable keys, anon keys, or service role keys.
+```bash
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+supabase secrets set RESEND_API_KEY=your_resend_api_key
+supabase secrets set PARENT_EMAIL_FROM=your_verified_sender
+```
 
-The Flutter app must never contain the Supabase service role key.
+Do not commit real `.env`, `.env.local`, anon keys, email keys, or service role
+keys. The Flutter app must never contain the Supabase service role key.
 
-Admin account creation and password reset should later be handled using a secure server-side function or Supabase Edge Function.
+## Flutter Backend Testing
 
-### Android Real Backend Testing
-
-Use Android emulator only for backend testing.
-
-Do not run web or Chrome for now because the previous passkeys/web issue may return.
-
-Example run command:
+Example Android emulator run command:
 
 ```bash
 flutter run -d emulator-5554 ^
-  --dart-define=SUPABASE_URL=https://tyscmqltxcuyndkhcvea.supabase.co ^
-  --dart-define=SUPABASE_ANON_KEY="YOUR_LOCAL_PUBLISHABLE_KEY" ^
+  --dart-define=SUPABASE_URL=your_supabase_url ^
+  --dart-define=SUPABASE_ANON_KEY=your_supabase_anon_key ^
   --dart-define=APP_ENV=development ^
   --dart-define=USE_MOCK_DATA=false
+```
+
+Optional Face API:
+
+```bash
+--dart-define=FACE_API_URL=http://10.0.2.2:8000
+```
+
+## Production Notes
+
+- Review SQL before applying to a project with real data.
+- Back up existing data before running migrations.
+- Verify Resend or email provider sender/domain before live email tests.
+- Replace the Python demo scaffold with a real CV/embedding service before
+  production use.
+- Run full manual device QA before APK release work.
