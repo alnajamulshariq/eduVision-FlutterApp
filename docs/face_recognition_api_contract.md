@@ -53,6 +53,22 @@ The Flutter app maps each result into `attendance_records` using:
 - `frames_detected`: number of frames where the student was detected
 - `total_frames`: total processed frames
 
-The real Python implementation is pending outside this Flutter repository. It
-should perform camera capture, face detection, embedding generation, embedding
-comparison, and percentage calculation before returning the response above.
+## Demo Scaffold
+
+This repository includes an optional `python_api/` FastAPI scaffold for FYP demo
+readiness. It implements the endpoint above and returns deterministic demo
+results from `enrolledStudentIds`.
+
+Run:
+
+```bash
+cd python_api
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Use `FACE_API_URL=http://10.0.2.2:8000` for Android emulator testing.
+
+The production Python implementation should replace the demo scoring with
+camera capture, face detection, embedding generation, embedding comparison, and
+percentage calculation before returning the response above.
