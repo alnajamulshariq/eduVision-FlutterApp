@@ -4,7 +4,7 @@
 -- Why this exists:
 -- The admin-create-user Edge Function uses SUPABASE_SERVICE_ROLE_KEY server-side,
 -- but PostgREST still requires object privileges for the service_role database role.
--- Without these grants, app_users insert can fail with:
+-- Without these grants, app_users insert/update can fail with:
 -- 42501 | permission denied for table app_users
 --
 -- This does not grant anon/authenticated direct admin write access.
@@ -20,4 +20,10 @@ grant insert on table
   public.app_users,
   public.students,
   public.teachers
+to service_role;
+
+grant select (id) on table public.app_users to service_role;
+
+grant update (is_first_login, password_changed_once)
+on table public.app_users
 to service_role;

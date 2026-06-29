@@ -137,14 +137,14 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     var selectedUserId = users.first.id;
     var isSubmitting = false;
 
-    await showModalBottomSheet<void>(
+    final successMessage = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) {
+      builder: (_) {
         return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final colorScheme = Theme.of(context).colorScheme;
+          builder: (sheetContext, setSheetState) {
+            final colorScheme = Theme.of(sheetContext).colorScheme;
 
             return SafeArea(
               child: Padding(
@@ -195,10 +195,11 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                     const SizedBox(height: 12),
                     Text(
                       'Password reset runs through a secure Edge Function.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        height: 1.35,
-                      ),
+                      style: Theme.of(sheetContext).textTheme.bodySmall
+                          ?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            height: 1.35,
+                          ),
                     ),
                     const SizedBox(height: 14),
                     PrimaryButton(
@@ -211,7 +212,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                           : () async {
                               if (passwordController.text.length < 6) {
                                 showModuleSnackBar(
-                                  context,
+                                  sheetContext,
                                   'Temporary password must be at least 6 characters.',
                                 );
                                 return;
@@ -228,7 +229,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                                     ),
                                   );
 
-                              if (!context.mounted) {
+                              if (!sheetContext.mounted) {
                                 return;
                               }
 
@@ -236,16 +237,25 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                                 :final exception,
                               )) {
                                 setSheetState(() => isSubmitting = false);
-                                showModuleSnackBar(context, exception.message);
+                                showModuleSnackBar(
+                                  sheetContext,
+                                  exception.message,
+                                );
                                 return;
                               }
 
                               if (result case Success<AdminWriteResultModel>(
                                 :final data,
                               )) {
-                                showModuleSnackBar(context, data.message);
-                                ref.invalidate(adminUsersOverviewProvider);
-                                Navigator.of(context).pop();
+                                if (data.success) {
+                                  Navigator.of(sheetContext).pop(data.message);
+                                } else {
+                                  setSheetState(() => isSubmitting = false);
+                                  showModuleSnackBar(
+                                    sheetContext,
+                                    data.message,
+                                  );
+                                }
                               }
                             },
                     ),
@@ -259,6 +269,13 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     );
 
     passwordController.dispose();
+
+    if (!mounted || successMessage == null) {
+      return;
+    }
+
+    ref.invalidate(adminUsersOverviewProvider);
+    showModuleSnackBar(context, successMessage);
   }
 
   @override

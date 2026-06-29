@@ -50,10 +50,19 @@ Deno.serve(async (request) => {
     return jsonResponse(failure('Unable to reset password for this user.'), 200);
   }
 
-  await admin
+  const { error: profileError } = await admin
     .from('app_users')
     .update({ is_first_login: true, password_changed_once: false })
     .eq('id', userId);
+
+  if (profileError) {
+    return jsonResponse(
+      failure(
+        'Temporary password was set, but user profile flags could not be updated.',
+      ),
+      200,
+    );
+  }
 
   await logActivity(admin, {
     actorUserId,
@@ -82,6 +91,20 @@ function createServiceClient() {
   });
 }
 
+function createCallerClient(token: string) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+
+  if (!supabaseUrl || !anonKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+}
+
 async function verifyAdminCaller(
   request: Request,
   admin: ReturnType<typeof createClient>,
@@ -96,11 +119,20 @@ async function verifyAdminCaller(
     return null;
   }
 
-  const { data: appUser } = await admin
+  const caller = createCallerClient(token);
+  if (!caller) {
+    return null;
+  }
+
+  const { data: appUser, error: appUserError } = await caller
     .from('app_users')
     .select('role, is_active')
     .eq('id', data.user.id)
     .maybeSingle();
+
+  if (appUserError || !appUser) {
+    return null;
+  }
 
   return appUser?.role === 'admin' && appUser?.is_active === true
     ? data.user.id
@@ -118,14 +150,18 @@ async function logActivity(
     metadata?: Record<string, unknown>;
   },
 ): Promise<void> {
-  await admin.from('system_activity_logs').insert({
-    actor_user_id: event.actorUserId,
-    action: event.action,
-    target_type: event.targetType ?? null,
-    target_id: event.targetId ?? null,
-    description: event.description ?? null,
-    metadata: event.metadata ?? null,
-  });
+  try {
+    await admin.from('system_activity_logs').insert({
+      actor_user_id: event.actorUserId,
+      action: event.action,
+      target_type: event.targetType ?? null,
+      target_id: event.targetId ?? null,
+      description: event.description ?? null,
+      metadata: event.metadata ?? null,
+    });
+  } catch (_) {
+    // Audit logging must never block the password reset result.
+  }
 }
 
 function readBearerToken(request: Request): string | null {
