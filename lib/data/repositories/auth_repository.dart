@@ -210,12 +210,33 @@ class AuthRepository {
         );
       }
 
-      final profile = await client
-          .from('app_users')
-          .select('is_first_login, password_changed_once')
-          .eq('id', userId)
-          .eq('is_active', true)
-          .maybeSingle();
+      final authUser = client.auth.currentUser;
+      if (authUser == null || authUser.id != userId) {
+        return const Result.failure(
+          AppException(
+            message: 'Please log in again before changing password.',
+            code: 'password_change_session_mismatch',
+          ),
+        );
+      }
+
+      final Map<String, dynamic>? profile;
+      try {
+        profile = await client
+            .from('app_users')
+            .select('is_first_login, password_changed_once')
+            .eq('id', userId)
+            .eq('is_active', true)
+            .maybeSingle();
+      } on PostgrestException {
+        return const Result.failure(
+          AppException(
+            message:
+                'Unable to verify password-change status. Please contact admin.',
+            code: 'password_profile_check_failed',
+          ),
+        );
+      }
 
       final isFirstLogin = profile?['is_first_login'] as bool? ?? false;
       final passwordChangedOnce =
@@ -230,18 +251,38 @@ class AuthRepository {
         );
       }
 
-      await client.auth.updateUser(
-        UserAttributes(password: newPassword.trim()),
-      );
+      try {
+        await client.auth.updateUser(
+          UserAttributes(password: newPassword.trim()),
+        );
+      } on AuthException catch (exception) {
+        return Result.failure(
+          AppException(
+            message: _friendlyPasswordUpdateMessage(exception.message),
+            code: 'supabase_auth_password_update_failed',
+          ),
+        );
+      }
 
-      final updatedProfile = await client
-          .from('app_users')
-          .update({'is_first_login': false, 'password_changed_once': true})
-          .eq('id', userId)
-          .eq('is_first_login', true)
-          .eq('password_changed_once', false)
-          .select('id')
-          .maybeSingle();
+      final Map<String, dynamic>? updatedProfile;
+      try {
+        updatedProfile = await client
+            .from('app_users')
+            .update({'is_first_login': false, 'password_changed_once': true})
+            .eq('id', userId)
+            .eq('is_first_login', true)
+            .eq('password_changed_once', false)
+            .select('id')
+            .maybeSingle();
+      } on PostgrestException {
+        return const Result.failure(
+          AppException(
+            message:
+                'Password was updated, but profile state could not be finalized. Please contact admin.',
+            code: 'password_profile_finalize_failed',
+          ),
+        );
+      }
 
       if (updatedProfile == null) {
         return const Result.failure(
@@ -254,6 +295,21 @@ class AuthRepository {
       }
 
       return const Result.success(null);
+    } on AuthException catch (exception) {
+      return Result.failure(
+        AppException(
+          message: _friendlyPasswordUpdateMessage(exception.message),
+          code: 'supabase_auth_password_update_failed',
+        ),
+      );
+    } on PostgrestException {
+      return const Result.failure(
+        AppException(
+          message:
+              'Unable to update password profile state. Please contact admin.',
+          code: 'password_profile_update_failed',
+        ),
+      );
     } catch (_) {
       return const Result.failure(
         AppException(
@@ -313,6 +369,22 @@ class AuthRepository {
     }
 
     return 'Login failed. Please check your email and password.';
+  }
+
+  String _friendlyPasswordUpdateMessage(String message) {
+    final normalizedMessage = message.toLowerCase();
+
+    if (normalizedMessage.contains('different') ||
+        normalizedMessage.contains('same')) {
+      return 'Choose a new password that is different from the temporary password.';
+    }
+
+    if (normalizedMessage.contains('weak') ||
+        normalizedMessage.contains('password')) {
+      return 'Choose a stronger password and try again.';
+    }
+
+    return 'Unable to update password right now. Please try again.';
   }
 
   bool get _shouldUseMockAuth {
