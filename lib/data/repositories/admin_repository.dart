@@ -597,7 +597,22 @@ class AdminRepository {
         );
       }
 
-      final response = await client.functions.invoke(functionName, body: body);
+      final accessToken = client.auth.currentSession?.accessToken;
+
+      if (accessToken == null || accessToken.isEmpty) {
+        return const Result.failure(
+          AppException(
+            message: 'Admin session is not available. Please log in again.',
+            code: 'admin_session_missing',
+          ),
+        );
+      }
+
+      final response = await client.functions.invoke(
+        functionName,
+        body: body,
+        headers: {'Authorization': 'Bearer $accessToken'},
+      );
       final data = response.data;
 
       if (data is Map<String, dynamic>) {
@@ -616,15 +631,39 @@ class AdminRepository {
           code: 'admin_function_invalid_response',
         ),
       );
-    } catch (_) {
-      return const Result.failure(
+    } catch (error) {
+      final message = _extractAdminFunctionErrorMessage(error);
+
+      return Result.failure(
         AppException(
           message:
+              message ??
               'Secure admin action failed. Check Edge Function deployment and secrets.',
           code: 'admin_function_failed',
         ),
       );
     }
+  }
+
+  String? _extractAdminFunctionErrorMessage(Object error) {
+    try {
+      final details = (error as dynamic).details;
+
+      if (details is Map) {
+        final message = details['message'];
+        if (message is String && message.trim().isNotEmpty) {
+          return message.trim();
+        }
+      }
+
+      if (details is String && details.trim().isNotEmpty) {
+        return details.trim();
+      }
+    } catch (_) {
+      return null;
+    }
+
+    return null;
   }
 
   Result<T> _academicWritesDisabled<T>(String feature) {

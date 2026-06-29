@@ -13,6 +13,15 @@ type CreateUserBody = {
   parentEmail?: string;
 };
 
+type VerifyAdminCallerResult = {
+  userId: string | null;
+  reason?:
+    | 'missing_bearer_token'
+    | 'auth_get_user_failed'
+    | 'app_user_not_found'
+    | 'not_admin_or_inactive';
+};
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
@@ -34,9 +43,16 @@ Deno.serve(async (request) => {
     return jsonResponse(failure('Admin service is not configured.'), 500);
   }
 
-  const actorUserId = await verifyAdminCaller(request, admin);
-  if (!actorUserId) {
-    return jsonResponse(failure('Only admins can perform this action.'), 403);
+  const actor = await verifyAdminCaller(request, admin);
+  if (!actor.userId) {
+    return jsonResponse(
+      failure(
+        `Only admins can perform this action. Reason: ${
+          actor.reason ?? 'unknown'
+        }`,
+      ),
+      403,
+    );
   }
 
   const body = await readJsonBody<CreateUserBody>(request);
@@ -87,7 +103,7 @@ Deno.serve(async (request) => {
   }
 
   await logActivity(admin, {
-    actorUserId,
+    actorUserId: actor.userId,
     action: 'user_created',
     targetType: role,
     targetId: userId,
@@ -191,29 +207,54 @@ function createServiceClient() {
   });
 }
 
+function createCallerClient(token: string) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+
+  if (!supabaseUrl || !anonKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+}
+
 async function verifyAdminCaller(
   request: Request,
   admin: ReturnType<typeof createClient>,
-): Promise<string | null> {
+): Promise<VerifyAdminCallerResult> {
   const token = readBearerToken(request);
   if (!token) {
-    return null;
+    return { userId: null, reason: 'missing_bearer_token' };
   }
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) {
-    return null;
+    return { userId: null, reason: 'auth_get_user_failed' };
   }
 
-  const { data: appUser } = await admin
+  const caller = createCallerClient(token);
+  if (!caller) {
+    return { userId: null, reason: 'app_user_not_found' };
+  }
+
+  const { data: appUser, error: appUserError } = await caller
     .from('app_users')
     .select('role, is_active')
     .eq('id', data.user.id)
     .maybeSingle();
 
-  return appUser?.role === 'admin' && appUser?.is_active === true
-    ? data.user.id
-    : null;
+  if (appUserError || !appUser) {
+    return { userId: null, reason: 'app_user_not_found' };
+  }
+
+  if (appUser.role !== 'admin' || appUser.is_active !== true) {
+    return { userId: null, reason: 'not_admin_or_inactive' };
+  }
+
+  return { userId: data.user.id };
 }
 
 async function logActivity(
