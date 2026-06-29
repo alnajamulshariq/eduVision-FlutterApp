@@ -728,6 +728,7 @@ Future<void> _showCreateDepartmentDialog(
 
   await _showAcademicSheet(
     context: context,
+    ref: ref,
     title: 'Create Department',
     icon: Icons.account_tree_rounded,
     fields: [
@@ -777,6 +778,7 @@ Future<void> _showCreateBatchDialog(
 
   await _showAcademicSheet(
     context: context,
+    ref: ref,
     title: 'Create Batch',
     icon: Icons.groups_rounded,
     fieldsBuilder: (setSheetState, isSubmitting) => [
@@ -848,6 +850,7 @@ Future<void> _showCreateSemesterDialog(
 
   await _showAcademicSheet(
     context: context,
+    ref: ref,
     title: 'Create Semester',
     icon: Icons.layers_rounded,
     fields: [
@@ -912,6 +915,7 @@ Future<void> _showCreateSubjectDialog(
 
   await _showAcademicSheet(
     context: context,
+    ref: ref,
     title: 'Create Subject',
     icon: Icons.menu_book_rounded,
     fieldsBuilder: (setSheetState, isSubmitting) => [
@@ -994,6 +998,7 @@ Future<void> _showAssignTeacherDialog(
 
   await _showAcademicSheet(
     context: context,
+    ref: ref,
     title: 'Assign Teacher',
     icon: Icons.assignment_ind_rounded,
     fieldsBuilder: (setSheetState, isSubmitting) => [
@@ -1079,6 +1084,7 @@ Future<void> _showEnrollStudentDialog(
 
   await _showAcademicSheet(
     context: context,
+    ref: ref,
     title: 'Enroll Student',
     icon: Icons.how_to_reg_rounded,
     fieldsBuilder: (setSheetState, isSubmitting) => [
@@ -1138,6 +1144,7 @@ Future<void> _showEnrollStudentDialog(
 
 Future<void> _showAcademicSheet({
   required BuildContext context,
+  required WidgetRef ref,
   required String title,
   required IconData icon,
   required Future<Result<AdminWriteResultModel>> Function() onSubmit,
@@ -1145,17 +1152,18 @@ Future<void> _showAcademicSheet({
   List<Widget> Function(StateSetter setSheetState, bool isSubmitting)?
   fieldsBuilder,
 }) async {
+  final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
   var isSubmitting = false;
 
-  await showModalBottomSheet<void>(
+  final successMessage = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
     backgroundColor: Theme.of(context).colorScheme.surface,
-    builder: (context) {
+    builder: (_) {
       return StatefulBuilder(
-        builder: (context, setSheetState) {
-          final colorScheme = Theme.of(context).colorScheme;
+        builder: (sheetContext, setSheetState) {
+          final colorScheme = Theme.of(sheetContext).colorScheme;
           final children =
               fieldsBuilder?.call(setSheetState, isSubmitting) ??
               fields ??
@@ -1167,7 +1175,7 @@ Future<void> _showAcademicSheet({
                 16,
                 8,
                 16,
-                18 + MediaQuery.viewInsetsOf(context).bottom,
+                18 + MediaQuery.viewInsetsOf(sheetContext).bottom,
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -1180,10 +1188,11 @@ Future<void> _showAcademicSheet({
                     const SizedBox(height: 12),
                     Text(
                       'This write runs through a secure Edge Function.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        height: 1.35,
-                      ),
+                      style: Theme.of(sheetContext).textTheme.bodySmall
+                          ?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            height: 1.35,
+                          ),
                     ),
                     const SizedBox(height: 14),
                     PrimaryButton(
@@ -1195,9 +1204,24 @@ Future<void> _showAcademicSheet({
                           ? null
                           : () async {
                               setSheetState(() => isSubmitting = true);
-                              final result = await onSubmit();
+                              final Result<AdminWriteResultModel> result;
 
-                              if (!context.mounted) {
+                              try {
+                                result = await onSubmit();
+                              } catch (_) {
+                                if (!sheetContext.mounted) {
+                                  return;
+                                }
+
+                                setSheetState(() => isSubmitting = false);
+                                showModuleSnackBar(
+                                  sheetContext,
+                                  'Secure admin action failed. Please try again.',
+                                );
+                                return;
+                              }
+
+                              if (!sheetContext.mounted) {
                                 return;
                               }
 
@@ -1205,19 +1229,24 @@ Future<void> _showAcademicSheet({
                                 :final exception,
                               )) {
                                 setSheetState(() => isSubmitting = false);
-                                showModuleSnackBar(context, exception.message);
+                                showModuleSnackBar(
+                                  sheetContext,
+                                  exception.message,
+                                );
                                 return;
                               }
 
                               if (result case Success<AdminWriteResultModel>(
                                 :final data,
                               )) {
-                                showModuleSnackBar(context, data.message);
-
                                 if (data.success) {
-                                  Navigator.of(context).pop();
+                                  Navigator.of(sheetContext).pop(data.message);
                                 } else {
                                   setSheetState(() => isSubmitting = false);
+                                  showModuleSnackBar(
+                                    sheetContext,
+                                    data.message,
+                                  );
                                 }
                               }
                             },
@@ -1232,11 +1261,21 @@ Future<void> _showAcademicSheet({
     },
   );
 
-  if (context.mounted) {
-    ProviderScope.containerOf(
-      context,
-    ).invalidate(adminAcademicOverviewProvider);
+  if (successMessage == null) {
+    return;
   }
+
+  await WidgetsBinding.instance.endOfFrame;
+
+  if (!context.mounted) {
+    return;
+  }
+
+  if (scaffoldMessenger?.mounted ?? false) {
+    scaffoldMessenger!.showSnackBar(SnackBar(content: Text(successMessage)));
+  }
+
+  ref.invalidate(adminAcademicOverviewProvider);
 }
 
 class _IdDropdown extends StatelessWidget {

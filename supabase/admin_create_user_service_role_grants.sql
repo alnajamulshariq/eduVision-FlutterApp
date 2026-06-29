@@ -27,3 +27,45 @@ grant select (id) on table public.app_users to service_role;
 grant update (is_first_login, password_changed_once)
 on table public.app_users
 to service_role;
+
+-- Required by admin-academic-write when it writes academic setup records
+-- through the server-side service-role PostgREST client.
+grant insert on table
+  public.departments,
+  public.batches,
+  public.semesters,
+  public.subjects,
+  public.teacher_subjects,
+  public.student_subjects
+to service_role;
+
+grant select (id) on table
+  public.departments,
+  public.batches,
+  public.semesters,
+  public.subjects,
+  public.teacher_subjects,
+  public.student_subjects
+to service_role;
+
+grant update (
+  teacher_id,
+  subject_id,
+  department_id,
+  batch_id,
+  semester_id,
+  is_active
+)
+on table public.teacher_subjects
+to service_role;
+
+grant update (
+  student_id,
+  subject_id,
+  department_id,
+  batch_id,
+  semester_id,
+  is_active
+)
+on table public.student_subjects
+to service_role;
