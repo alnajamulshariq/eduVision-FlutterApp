@@ -29,6 +29,7 @@ Future<void> showEduVisionAboutSheet(BuildContext context) {
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    requestFocus: false,
     builder: (context) {
       return DraggableScrollableSheet(
         expand: false,

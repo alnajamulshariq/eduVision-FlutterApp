@@ -140,6 +140,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     final successMessage = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      requestFocus: false,
       backgroundColor: Theme.of(context).colorScheme.surface,
       builder: (_) {
         return StatefulBuilder(
@@ -1043,6 +1044,7 @@ void _showUserDetails(BuildContext context, AdminUserProfileModel user) {
   showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
+    requestFocus: false,
     backgroundColor: colorScheme.surface,
     builder: (context) {
       return SafeArea(

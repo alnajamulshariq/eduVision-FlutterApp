@@ -723,8 +723,8 @@ Future<void> _showCreateDepartmentDialog(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  final nameController = TextEditingController();
-  final codeController = TextEditingController();
+  var departmentName = '';
+  var departmentCode = '';
 
   await _showAcademicSheet(
     context: context,
@@ -733,7 +733,7 @@ Future<void> _showCreateDepartmentDialog(
     icon: Icons.account_tree_rounded,
     fields: [
       TextField(
-        controller: nameController,
+        onChanged: (value) => departmentName = value,
         textInputAction: TextInputAction.next,
         decoration: const InputDecoration(
           labelText: 'Department Name',
@@ -742,7 +742,7 @@ Future<void> _showCreateDepartmentDialog(
       ),
       const SizedBox(height: 10),
       TextField(
-        controller: codeController,
+        onChanged: (value) => departmentCode = value,
         textCapitalization: TextCapitalization.characters,
         decoration: const InputDecoration(
           labelText: 'Department Code',
@@ -753,13 +753,10 @@ Future<void> _showCreateDepartmentDialog(
     onSubmit: () => ref
         .read(adminRepositoryProvider)
         .createDepartmentSecure(
-          name: nameController.text,
-          code: codeController.text,
+          name: departmentName.trim(),
+          code: departmentCode.trim(),
         ),
   );
-
-  nameController.dispose();
-  codeController.dispose();
 }
 
 Future<void> _showCreateBatchDialog(
@@ -772,8 +769,8 @@ Future<void> _showCreateBatchDialog(
     return;
   }
 
-  final nameController = TextEditingController();
-  final yearController = TextEditingController();
+  var batchName = '';
+  var batchYear = '';
   var departmentId = overview.departments.first.id;
 
   await _showAcademicSheet(
@@ -783,7 +780,7 @@ Future<void> _showCreateBatchDialog(
     icon: Icons.groups_rounded,
     fieldsBuilder: (setSheetState, isSubmitting) => [
       TextField(
-        controller: nameController,
+        onChanged: (value) => batchName = value,
         textInputAction: TextInputAction.next,
         decoration: const InputDecoration(
           labelText: 'Batch Name',
@@ -792,7 +789,7 @@ Future<void> _showCreateBatchDialog(
       ),
       const SizedBox(height: 10),
       TextField(
-        controller: yearController,
+        onChanged: (value) => batchYear = value,
         keyboardType: TextInputType.number,
         textInputAction: TextInputAction.next,
         decoration: const InputDecoration(
@@ -815,7 +812,7 @@ Future<void> _showCreateBatchDialog(
       ),
     ],
     onSubmit: () {
-      final year = int.tryParse(yearController.text.trim());
+      final year = int.tryParse(batchYear.trim());
       if (year == null) {
         return Future.value(
           const Result.failure(
@@ -830,23 +827,20 @@ Future<void> _showCreateBatchDialog(
       return ref
           .read(adminRepositoryProvider)
           .createBatchSecure(
-            name: nameController.text,
+            name: batchName.trim(),
             year: year,
             departmentId: departmentId,
           );
     },
   );
-
-  nameController.dispose();
-  yearController.dispose();
 }
 
 Future<void> _showCreateSemesterDialog(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  final nameController = TextEditingController();
-  final numberController = TextEditingController();
+  var semesterName = '';
+  var semesterNumber = '';
 
   await _showAcademicSheet(
     context: context,
@@ -855,7 +849,7 @@ Future<void> _showCreateSemesterDialog(
     icon: Icons.layers_rounded,
     fields: [
       TextField(
-        controller: nameController,
+        onChanged: (value) => semesterName = value,
         textInputAction: TextInputAction.next,
         decoration: const InputDecoration(
           labelText: 'Semester Name',
@@ -864,7 +858,7 @@ Future<void> _showCreateSemesterDialog(
       ),
       const SizedBox(height: 10),
       TextField(
-        controller: numberController,
+        onChanged: (value) => semesterNumber = value,
         keyboardType: TextInputType.number,
         decoration: const InputDecoration(
           labelText: 'Semester Number',
@@ -873,7 +867,7 @@ Future<void> _showCreateSemesterDialog(
       ),
     ],
     onSubmit: () {
-      final number = int.tryParse(numberController.text.trim());
+      final number = int.tryParse(semesterNumber.trim());
       if (number == null) {
         return Future.value(
           const Result.failure(
@@ -887,12 +881,9 @@ Future<void> _showCreateSemesterDialog(
 
       return ref
           .read(adminRepositoryProvider)
-          .createSemesterSecure(name: nameController.text, number: number);
+          .createSemesterSecure(name: semesterName.trim(), number: number);
     },
   );
-
-  nameController.dispose();
-  numberController.dispose();
 }
 
 Future<void> _showCreateSubjectDialog(
@@ -908,8 +899,8 @@ Future<void> _showCreateSubjectDialog(
     return;
   }
 
-  final nameController = TextEditingController();
-  final codeController = TextEditingController();
+  var subjectName = '';
+  var subjectCode = '';
   var departmentId = overview.departments.first.id;
   var semesterId = overview.semesters.first.id;
 
@@ -920,7 +911,7 @@ Future<void> _showCreateSubjectDialog(
     icon: Icons.menu_book_rounded,
     fieldsBuilder: (setSheetState, isSubmitting) => [
       TextField(
-        controller: nameController,
+        onChanged: (value) => subjectName = value,
         textInputAction: TextInputAction.next,
         decoration: const InputDecoration(
           labelText: 'Subject Name',
@@ -929,7 +920,7 @@ Future<void> _showCreateSubjectDialog(
       ),
       const SizedBox(height: 10),
       TextField(
-        controller: codeController,
+        onChanged: (value) => subjectCode = value,
         textInputAction: TextInputAction.next,
         textCapitalization: TextCapitalization.characters,
         decoration: const InputDecoration(
@@ -966,15 +957,12 @@ Future<void> _showCreateSubjectDialog(
     onSubmit: () => ref
         .read(adminRepositoryProvider)
         .createSubjectSecure(
-          name: nameController.text,
-          code: codeController.text,
+          name: subjectName.trim(),
+          code: subjectCode.trim(),
           departmentId: departmentId,
           semesterId: semesterId,
         ),
   );
-
-  nameController.dispose();
-  codeController.dispose();
 }
 
 Future<void> _showAssignTeacherDialog(
@@ -1159,11 +1147,14 @@ Future<void> _showAcademicSheet({
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
+    requestFocus: false,
     backgroundColor: Theme.of(context).colorScheme.surface,
     builder: (_) {
       return StatefulBuilder(
         builder: (sheetContext, setSheetState) {
           final colorScheme = Theme.of(sheetContext).colorScheme;
+          final sheetNavigator = Navigator.of(sheetContext);
+          final sheetMessenger = ScaffoldMessenger.maybeOf(sheetContext);
           final children =
               fieldsBuilder?.call(setSheetState, isSubmitting) ??
               fields ??
@@ -1214,9 +1205,12 @@ Future<void> _showAcademicSheet({
                                 }
 
                                 setSheetState(() => isSubmitting = false);
-                                showModuleSnackBar(
-                                  sheetContext,
-                                  'Secure admin action failed. Please try again.',
+                                sheetMessenger?.showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Secure admin action failed. Please try again.',
+                                    ),
+                                  ),
                                 );
                                 return;
                               }
@@ -1229,9 +1223,8 @@ Future<void> _showAcademicSheet({
                                 :final exception,
                               )) {
                                 setSheetState(() => isSubmitting = false);
-                                showModuleSnackBar(
-                                  sheetContext,
-                                  exception.message,
+                                sheetMessenger?.showSnackBar(
+                                  SnackBar(content: Text(exception.message)),
                                 );
                                 return;
                               }
@@ -1240,12 +1233,12 @@ Future<void> _showAcademicSheet({
                                 :final data,
                               )) {
                                 if (data.success) {
-                                  Navigator.of(sheetContext).pop(data.message);
+                                  FocusManager.instance.primaryFocus?.unfocus();
+                                  sheetNavigator.pop(data.message);
                                 } else {
                                   setSheetState(() => isSubmitting = false);
-                                  showModuleSnackBar(
-                                    sheetContext,
-                                    data.message,
+                                  sheetMessenger?.showSnackBar(
+                                    SnackBar(content: Text(data.message)),
                                   );
                                 }
                               }
@@ -1266,6 +1259,7 @@ Future<void> _showAcademicSheet({
   }
 
   await WidgetsBinding.instance.endOfFrame;
+  await Future<void>.delayed(Duration.zero);
 
   if (!context.mounted) {
     return;
@@ -1278,7 +1272,7 @@ Future<void> _showAcademicSheet({
   ref.invalidate(adminAcademicOverviewProvider);
 }
 
-class _IdDropdown extends StatelessWidget {
+class _IdDropdown extends StatefulWidget {
   const _IdDropdown({
     required this.label,
     required this.icon,
@@ -1294,25 +1288,103 @@ class _IdDropdown extends StatelessWidget {
   final ValueChanged<String>? onChanged;
 
   @override
+  State<_IdDropdown> createState() => _IdDropdownState();
+}
+
+class _IdDropdownState extends State<_IdDropdown> {
+  bool _isExpanded = false;
+
+  @override
+  void didUpdateWidget(covariant _IdDropdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.onChanged == null) {
+      _isExpanded = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
-      items: [
-        for (final item in items.entries)
-          DropdownMenuItem<String>(
-            value: item.key,
-            child: Text(item.value, overflow: TextOverflow.ellipsis),
+    final colorScheme = Theme.of(context).colorScheme;
+    final entries = widget.items.entries.toList(growable: false);
+    final enabled = widget.onChanged != null;
+    final selectedLabel =
+        widget.items[widget.value] ?? 'Select ${widget.label}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: enabled
+              ? () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  setState(() => _isExpanded = !_isExpanded);
+                }
+              : null,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: widget.label,
+              prefixIcon: Icon(widget.icon),
+              suffixIcon: Icon(
+                _isExpanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+              ),
+            ),
+            child: Text(
+              selectedLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: enabled
+                    ? colorScheme.onSurface
+                    : colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
+        ),
+        if (_isExpanded && enabled) ...[
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(color: colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: entries.length,
+                separatorBuilder: (_, _) =>
+                    Divider(height: 1, color: colorScheme.outlineVariant),
+                itemBuilder: (context, index) {
+                  final item = entries[index];
+                  final isSelected = item.key == widget.value;
+
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(
+                      isSelected
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      color: isSelected
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    title: Text(item.value, overflow: TextOverflow.ellipsis),
+                    selected: isSelected,
+                    onTap: () {
+                      setState(() => _isExpanded = false);
+                      widget.onChanged?.call(item.key);
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ],
-      onChanged: onChanged == null
-          ? null
-          : (value) {
-              if (value != null) {
-                onChanged!(value);
-              }
-            },
     );
   }
 }
