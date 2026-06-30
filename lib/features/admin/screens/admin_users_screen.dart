@@ -57,9 +57,26 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     }
 
     final role = _role.toLowerCase();
-    final department = _findDepartment(academicOverview, _department);
-    final batch = _findBatch(academicOverview, _batch);
-    final semester = _findSemester(academicOverview, _semester);
+    final departmentOptions = _departmentOptions(academicOverview);
+    final safeDepartments = departmentOptions.isEmpty
+        ? _fallbackDepartments
+        : departmentOptions;
+    final selectedDepartment = _safeSelection(safeDepartments, _department);
+    final department = _findDepartment(academicOverview, selectedDepartment);
+    final batchOptions = _batchOptions(academicOverview, department?.id);
+    final safeBatches = batchOptions.isEmpty ? _fallbackBatches : batchOptions;
+    final selectedBatch = _safeSelection(safeBatches, _batch);
+    final batch = _findBatch(
+      academicOverview,
+      selectedBatch,
+      departmentId: department?.id,
+    );
+    final semesterOptions = _semesterOptions(academicOverview);
+    final safeSemesters = semesterOptions.isEmpty
+        ? _fallbackSemesters
+        : semesterOptions;
+    final selectedSemester = _safeSelection(safeSemesters, _semester);
+    final semester = _findSemester(academicOverview, selectedSemester);
     final profileId = _profileIdController.text.trim();
 
     final validation = _validateCreateUserForm(
@@ -283,41 +300,30 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   Widget build(BuildContext context) {
     final usersAsync = ref.watch(adminUsersOverviewProvider);
     final academicAsync = ref.watch(adminAcademicOverviewProvider);
-    final departmentOptions = academicAsync.maybeWhen(
-      data: (overview) => overview.departments
-          .map((department) => department.name)
-          .where((name) => name.trim().isNotEmpty)
-          .toList(),
-      orElse: () => _fallbackDepartments,
-    );
-    final batchOptions = academicAsync.maybeWhen(
-      data: (overview) => overview.batches
-          .map((batch) => batch.name)
-          .where((name) => name.trim().isNotEmpty)
-          .toList(),
-      orElse: () => _fallbackBatches,
-    );
-    final semesterOptions = academicAsync.maybeWhen(
-      data: (overview) => overview.semesters
-          .map((semester) => semester.name)
-          .where((name) => name.trim().isNotEmpty)
-          .toList(),
-      orElse: () => _fallbackSemesters,
-    );
-    final safeDepartments = departmentOptions.isEmpty
-        ? _fallbackDepartments
-        : departmentOptions;
-    final safeBatches = batchOptions.isEmpty ? _fallbackBatches : batchOptions;
-    final safeSemesters = semesterOptions.isEmpty
-        ? _fallbackSemesters
-        : semesterOptions;
-    final selectedDepartment = _safeSelection(safeDepartments, _department);
-    final selectedBatch = _safeSelection(safeBatches, _batch);
-    final selectedSemester = _safeSelection(safeSemesters, _semester);
     final academicOverview = academicAsync.maybeWhen(
       data: (overview) => overview,
       orElse: () => null,
     );
+    final departmentOptions = _departmentOptions(academicOverview);
+    final safeDepartments = departmentOptions.isEmpty
+        ? _fallbackDepartments
+        : departmentOptions;
+    final selectedDepartment = _safeSelection(safeDepartments, _department);
+    final selectedDepartmentModel = _findDepartment(
+      academicOverview,
+      selectedDepartment,
+    );
+    final batchOptions = _batchOptions(
+      academicOverview,
+      selectedDepartmentModel?.id,
+    );
+    final safeBatches = batchOptions.isEmpty ? _fallbackBatches : batchOptions;
+    final semesterOptions = _semesterOptions(academicOverview);
+    final safeSemesters = semesterOptions.isEmpty
+        ? _fallbackSemesters
+        : semesterOptions;
+    final selectedBatch = _safeSelection(safeBatches, _batch);
+    final selectedSemester = _safeSelection(safeSemesters, _semester);
 
     return ModuleScreenShell(
       title: 'User Management',
@@ -354,8 +360,20 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
               semesterOptions: safeSemesters,
               isSubmitting: _isSubmitting,
               onRoleChanged: (value) => setState(() => _role = value),
-              onDepartmentChanged: (value) =>
-                  setState(() => _department = value),
+              onDepartmentChanged: (value) {
+                final department = _findDepartment(academicOverview, value);
+                final nextBatch =
+                    _firstBatchNameForDepartment(
+                      academicOverview,
+                      department?.id,
+                    ) ??
+                    _fallbackBatches.first;
+
+                setState(() {
+                  _department = value;
+                  _batch = nextBatch;
+                });
+              },
               onBatchChanged: (value) => setState(() => _batch = value),
               onSemesterChanged: (value) => setState(() => _semester = value),
               onCreateUser: () => _createUser(academicOverview),
@@ -1202,13 +1220,18 @@ DepartmentModel? _findDepartment(AcademicOverviewModel? overview, String name) {
   return null;
 }
 
-BatchSummaryModel? _findBatch(AcademicOverviewModel? overview, String name) {
+BatchSummaryModel? _findBatch(
+  AcademicOverviewModel? overview,
+  String name, {
+  String? departmentId,
+}) {
   if (overview == null) {
     return null;
   }
 
   for (final batch in overview.batches) {
-    if (batch.name == name) {
+    if (batch.name == name &&
+        (departmentId == null || batch.departmentId == departmentId)) {
       return batch;
     }
   }
@@ -1224,6 +1247,60 @@ SemesterModel? _findSemester(AcademicOverviewModel? overview, String name) {
   for (final semester in overview.semesters) {
     if (semester.name == name) {
       return semester;
+    }
+  }
+
+  return null;
+}
+
+List<String> _departmentOptions(AcademicOverviewModel? overview) {
+  if (overview == null) {
+    return _fallbackDepartments;
+  }
+
+  return overview.departments
+      .map((department) => department.name)
+      .where((name) => name.trim().isNotEmpty)
+      .toList(growable: false);
+}
+
+List<String> _batchOptions(
+  AcademicOverviewModel? overview,
+  String? departmentId,
+) {
+  if (overview == null || departmentId == null) {
+    return _fallbackBatches;
+  }
+
+  return overview.batches
+      .where((batch) => batch.departmentId == departmentId)
+      .map((batch) => batch.name)
+      .where((name) => name.trim().isNotEmpty)
+      .toList(growable: false);
+}
+
+List<String> _semesterOptions(AcademicOverviewModel? overview) {
+  if (overview == null) {
+    return _fallbackSemesters;
+  }
+
+  return overview.semesters
+      .map((semester) => semester.name)
+      .where((name) => name.trim().isNotEmpty)
+      .toList(growable: false);
+}
+
+String? _firstBatchNameForDepartment(
+  AcademicOverviewModel? overview,
+  String? departmentId,
+) {
+  if (overview == null || departmentId == null) {
+    return null;
+  }
+
+  for (final batch in overview.batches) {
+    if (batch.departmentId == departmentId) {
+      return batch.name;
     }
   }
 

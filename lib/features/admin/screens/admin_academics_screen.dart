@@ -1059,59 +1059,289 @@ Future<void> _showEnrollStudentDialog(
   WidgetRef ref, {
   required AcademicOverviewModel overview,
 }) async {
-  if (overview.students.isEmpty || overview.subjects.isEmpty) {
+  if (overview.departments.isEmpty) {
     showModuleSnackBar(
       context,
-      'Students and subjects are required before enrollment.',
+      'Create a department before enrolling students.',
     );
     return;
   }
 
-  var studentId = overview.students.first.id;
-  var subjectId = overview.subjects.first.id;
+  if (overview.semesters.isEmpty) {
+    showModuleSnackBar(context, 'Create a semester before enrolling students.');
+    return;
+  }
+
+  if (overview.students.isEmpty) {
+    showModuleSnackBar(context, 'Create a student before enrollment.');
+    return;
+  }
+
+  var departmentId = overview.departments.first.id;
+  var batchId = _firstBatchIdForDepartment(overview, departmentId) ?? '';
+  var semesterId = overview.semesters.first.id;
+  var subjectId =
+      _firstSubjectIdForContext(overview, departmentId, semesterId) ?? '';
+  var studentId =
+      _firstStudentIdForContext(overview, departmentId, batchId, semesterId) ??
+      '';
 
   await _showAcademicSheet(
     context: context,
     ref: ref,
     title: 'Enroll Student',
     icon: Icons.how_to_reg_rounded,
-    fieldsBuilder: (setSheetState, isSubmitting) => [
-      _IdDropdown(
-        label: 'Student',
-        icon: Icons.school_rounded,
-        value: studentId,
-        items: {
-          for (final student in overview.students)
-            student.id: '${student.name} - ${student.rollNo}',
-        },
-        onChanged: isSubmitting
-            ? null
-            : (value) => setSheetState(() => studentId = value),
-      ),
-      const SizedBox(height: 10),
-      _IdDropdown(
-        label: 'Subject',
-        icon: Icons.menu_book_rounded,
-        value: subjectId,
-        items: {
-          for (final subject in overview.subjects)
-            subject.id: '${subject.name} - ${subject.code}',
-        },
-        onChanged: isSubmitting
-            ? null
-            : (value) => setSheetState(() => subjectId = value),
-      ),
-    ],
+    fieldsBuilder: (setSheetState, isSubmitting) {
+      final filteredBatches = _batchesForDepartment(overview, departmentId);
+      final filteredSubjects = _subjectsForContext(
+        overview,
+        departmentId,
+        semesterId,
+      );
+      final filteredStudents = _studentsForContext(
+        overview,
+        departmentId,
+        batchId,
+        semesterId,
+      );
+
+      return [
+        _IdDropdown(
+          label: 'Department',
+          icon: Icons.account_tree_rounded,
+          value: departmentId,
+          items: {
+            for (final department in overview.departments)
+              department.id: department.name,
+          },
+          onChanged: isSubmitting
+              ? null
+              : (value) {
+                  setSheetState(() {
+                    departmentId = value;
+                    batchId =
+                        _firstBatchIdForDepartment(overview, departmentId) ??
+                        '';
+                    subjectId =
+                        _firstSubjectIdForContext(
+                          overview,
+                          departmentId,
+                          semesterId,
+                        ) ??
+                        '';
+                    studentId =
+                        _firstStudentIdForContext(
+                          overview,
+                          departmentId,
+                          batchId,
+                          semesterId,
+                        ) ??
+                        '';
+                  });
+                },
+        ),
+        const SizedBox(height: 10),
+        _IdDropdown(
+          label: 'Batch',
+          icon: Icons.groups_rounded,
+          value: batchId,
+          items: {
+            for (final batch in filteredBatches)
+              batch.id: '${batch.name} - ${batch.year}',
+          },
+          onChanged: isSubmitting || filteredBatches.isEmpty
+              ? null
+              : (value) {
+                  setSheetState(() {
+                    batchId = value;
+                    studentId =
+                        _firstStudentIdForContext(
+                          overview,
+                          departmentId,
+                          batchId,
+                          semesterId,
+                        ) ??
+                        '';
+                  });
+                },
+        ),
+        const SizedBox(height: 10),
+        _IdDropdown(
+          label: 'Semester',
+          icon: Icons.layers_rounded,
+          value: semesterId,
+          items: {
+            for (final semester in overview.semesters)
+              semester.id: semester.name,
+          },
+          onChanged: isSubmitting
+              ? null
+              : (value) {
+                  setSheetState(() {
+                    semesterId = value;
+                    subjectId =
+                        _firstSubjectIdForContext(
+                          overview,
+                          departmentId,
+                          semesterId,
+                        ) ??
+                        '';
+                    studentId =
+                        _firstStudentIdForContext(
+                          overview,
+                          departmentId,
+                          batchId,
+                          semesterId,
+                        ) ??
+                        '';
+                  });
+                },
+        ),
+        const SizedBox(height: 10),
+        _IdDropdown(
+          label: 'Subject',
+          icon: Icons.menu_book_rounded,
+          value: subjectId,
+          items: {
+            for (final subject in filteredSubjects)
+              subject.id: '${subject.name} - ${subject.code}',
+          },
+          onChanged: isSubmitting || filteredSubjects.isEmpty
+              ? null
+              : (value) => setSheetState(() => subjectId = value),
+        ),
+        const SizedBox(height: 10),
+        _IdDropdown(
+          label: 'Student',
+          icon: Icons.school_rounded,
+          value: studentId,
+          items: {
+            for (final student in filteredStudents)
+              student.id: _studentEnrollmentLabel(student),
+          },
+          onChanged: isSubmitting || filteredStudents.isEmpty
+              ? null
+              : (value) => setSheetState(() => studentId = value),
+        ),
+      ];
+    },
     onSubmit: () {
+      final department = _departmentById(overview, departmentId);
+      final batch = _batchById(overview, batchId);
+      final hasValidBatches = _batchesForDepartment(
+        overview,
+        departmentId,
+      ).isNotEmpty;
       final student = _studentById(overview, studentId);
       final subject = _subjectById(overview, subjectId);
+      final hasMatchingStudents = _studentsForContext(
+        overview,
+        departmentId,
+        batchId,
+        semesterId,
+      ).isNotEmpty;
+      final hasValidSemester = overview.semesters.any(
+        (semester) => semester.id == semesterId,
+      );
 
-      if (student == null || subject == null) {
+      if (department == null) {
         return Future.value(
           const Result.failure(
             AppException(
-              message: 'Choose a valid student and subject.',
-              code: 'invalid_enrollment_selection',
+              message: 'Choose a valid department.',
+              code: 'invalid_enrollment_department',
+            ),
+          ),
+        );
+      }
+
+      if (!hasValidBatches) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message: 'Create a batch for the selected department first.',
+              code: 'missing_enrollment_batch',
+            ),
+          ),
+        );
+      }
+
+      if (batch == null || batch.departmentId != departmentId) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message: 'Choose a batch for the selected department.',
+              code: 'invalid_enrollment_batch',
+            ),
+          ),
+        );
+      }
+
+      if (!hasValidSemester) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message: 'Choose a valid semester.',
+              code: 'invalid_enrollment_semester',
+            ),
+          ),
+        );
+      }
+
+      final hasValidSubjects = _subjectsForContext(
+        overview,
+        departmentId,
+        semesterId,
+      ).isNotEmpty;
+
+      if (!hasValidSubjects) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message:
+                  'Create a subject for the selected department and semester first.',
+              code: 'missing_enrollment_subject',
+            ),
+          ),
+        );
+      }
+
+      if (subject == null ||
+          subject.departmentId != departmentId ||
+          subject.semesterId != semesterId) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message:
+                  'Choose a subject for the selected department and semester.',
+              code: 'invalid_enrollment_subject',
+            ),
+          ),
+        );
+      }
+
+      if (!hasMatchingStudents) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message:
+                  'Create or update a student for the selected department, batch, and semester first.',
+              code: 'missing_enrollment_student',
+            ),
+          ),
+        );
+      }
+
+      if (student == null ||
+          student.departmentId != departmentId ||
+          student.batchId != batchId ||
+          student.semesterId != semesterId) {
+        return Future.value(
+          const Result.failure(
+            AppException(
+              message:
+                  'Choose a student for the selected department, batch, and semester.',
+              code: 'invalid_enrollment_student',
             ),
           ),
         );
@@ -1122,9 +1352,9 @@ Future<void> _showEnrollStudentDialog(
           .enrollStudentSecure(
             studentId: studentId,
             subjectId: subjectId,
-            departmentId: subject.departmentId,
-            batchId: student.batchId,
-            semesterId: subject.semesterId,
+            departmentId: departmentId,
+            batchId: batchId,
+            semesterId: semesterId,
           );
     },
   );
@@ -1402,6 +1632,19 @@ SubjectSummaryModel? _subjectById(
   return null;
 }
 
+DepartmentModel? _departmentById(
+  AcademicOverviewModel overview,
+  String departmentId,
+) {
+  for (final department in overview.departments) {
+    if (department.id == departmentId) {
+      return department;
+    }
+  }
+
+  return null;
+}
+
 BatchSummaryModel? _batchById(AcademicOverviewModel overview, String batchId) {
   for (final batch in overview.batches) {
     if (batch.id == batchId) {
@@ -1410,6 +1653,77 @@ BatchSummaryModel? _batchById(AcademicOverviewModel overview, String batchId) {
   }
 
   return null;
+}
+
+List<BatchSummaryModel> _batchesForDepartment(
+  AcademicOverviewModel overview,
+  String departmentId,
+) {
+  return overview.batches
+      .where((batch) => batch.departmentId == departmentId)
+      .toList(growable: false);
+}
+
+List<SubjectSummaryModel> _subjectsForContext(
+  AcademicOverviewModel overview,
+  String departmentId,
+  String semesterId,
+) {
+  return overview.subjects
+      .where(
+        (subject) =>
+            subject.departmentId == departmentId &&
+            subject.semesterId == semesterId,
+      )
+      .toList(growable: false);
+}
+
+String? _firstBatchIdForDepartment(
+  AcademicOverviewModel overview,
+  String departmentId,
+) {
+  final batches = _batchesForDepartment(overview, departmentId);
+  return batches.isEmpty ? null : batches.first.id;
+}
+
+String? _firstSubjectIdForContext(
+  AcademicOverviewModel overview,
+  String departmentId,
+  String semesterId,
+) {
+  final subjects = _subjectsForContext(overview, departmentId, semesterId);
+  return subjects.isEmpty ? null : subjects.first.id;
+}
+
+List<AdminStudentProfileModel> _studentsForContext(
+  AcademicOverviewModel overview,
+  String departmentId,
+  String batchId,
+  String semesterId,
+) {
+  return overview.students
+      .where(
+        (student) =>
+            student.departmentId == departmentId &&
+            student.batchId == batchId &&
+            student.semesterId == semesterId,
+      )
+      .toList(growable: false);
+}
+
+String? _firstStudentIdForContext(
+  AcademicOverviewModel overview,
+  String departmentId,
+  String batchId,
+  String semesterId,
+) {
+  final students = _studentsForContext(
+    overview,
+    departmentId,
+    batchId,
+    semesterId,
+  );
+  return students.isEmpty ? null : students.first.id;
 }
 
 AdminStudentProfileModel? _studentById(
@@ -1423,6 +1737,10 @@ AdminStudentProfileModel? _studentById(
   }
 
   return null;
+}
+
+String _studentEnrollmentLabel(AdminStudentProfileModel student) {
+  return '${student.name} - ${student.rollNo}';
 }
 
 String _display(String? value, String fallback) {
